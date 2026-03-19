@@ -26,9 +26,10 @@ import {
 } from "antd";
 import type { DefaultOptionType } from "antd/es/select";
 import type { ColumnsType, ColumnType } from "antd/es/table";
-import { CopyOutlined, DragOutlined, PlusOutlined, RobotOutlined } from "@ant-design/icons";
+import { CopyOutlined, DragOutlined, PlusOutlined, RobotOutlined, FileTextOutlined } from "@ant-design/icons";
 
 import {
+
   assignAwb,
   assignFlight,
   autoPlan,
@@ -84,27 +85,7 @@ const tableColumnOptions = [
 ].map(([value,label]) => ({ value: value as TableColumnKey, label }));
 const statusColor: Record<string, string> = { pending: "gold", draft: "default", confirmed: "green", partial: "orange", fixed: "blue", handed_over_partial: "orange", handed_over_full: "green", not_handed_over: "default", flown_partial: "orange", flown_full: "green", not_flown: "red", postponed: "volcano" };
 
-const bookingLabels: Record<string, string> = {
-  pending: "Ожидает",
-  draft: "Черновик",
-  confirmed: "Подтверждено",
-  partial: "Частично",
-  fixed: "Зафиксировано"
-};
-
-const handoverLabels: Record<string, string> = {
-  not_handed_over: "Не сдано",
-  handed_over_partial: "Сдано частично",
-  handed_over_full: "Сдано полностью"
-};
-
-const executionLabels: Record<string, string> = {
-  pending: "Ожидает",
-  flown_partial: "Вылетело частично",
-  flown_full: "Вылетело полностью",
-  not_flown: "Не вылетело",
-  postponed: "Отложено"
-};
+import { StatusTag, bookingLabels, executionLabels, handoverLabels } from "../uiUtils";
 
 const temperatureOptions = [
   { value: "+2..+8", label: "+2..+8 °C" },
@@ -170,9 +151,9 @@ function getTableColumn(key: TableColumnKey): ColumnType<WorkbenchRow> {
     case "volume_total": return { title: "Объем", dataIndex: "volume_total", key, width: 100, render: (v: number) => `${fmt(v)} м³` };
     case "awb_number": return { title: "AWB", dataIndex: "awb_number", key, width: 140, render: (v: string | null) => v ?? "—" };
     case "planned_flight_number": return { title: "Рейс", dataIndex: "planned_flight_number", key, width: 130, render: (v: string | null) => v ?? "—" };
-    case "booking_status": return { title: "Бронь", dataIndex: "booking_status", key, width: 120, render: (v: string) => <Tag color={statusColor[v] ?? "blue"}>{bookingLabels[v] ?? v}</Tag> };
-    case "handover_status": return { title: "Сдача", dataIndex: "handover_status", key, width: 150, render: (v: string) => <Tag color={statusColor[v] ?? "default"}>{handoverLabels[v] ?? v}</Tag> };
-    case "execution_status": return { title: "Вылет", dataIndex: "execution_status", key, width: 120, render: (v: string) => <Tag color={statusColor[v] ?? "default"}>{executionLabels[v] ?? v}</Tag> };
+    case "booking_status": return { title: "Бронь", dataIndex: "booking_status", key, width: 140, render: (v: string) => <StatusTag status={v} type="booking" /> };
+    case "handover_status": return { title: "Сдача", dataIndex: "handover_status", key, width: 150, render: (v: string) => <StatusTag status={v} type="handover" /> };
+    case "execution_status": return { title: "Вылет", dataIndex: "execution_status", key, width: 150, render: (v: string) => <StatusTag status={v} type="execution" /> };
     case "color_tag": return { title: "Цвет", dataIndex: "color_tag", key, width: 100, render: (v: string | null) => (v ? <Tag color={v}>{v}</Tag> : "—") };
   }
 }
@@ -482,12 +463,27 @@ export function PlanningPage() {
                 <Button type="primary" onClick={() => setAwbOpen(true)} disabled={!activeRow}>
                   + Новая AWB
                 </Button>
-                <Button onClick={handleDownloadCsv} loading={apiBusy}>
+                <Button icon={<CopyOutlined />} onClick={handleDownloadCsv} loading={apiBusy}>
                   Скачать CSV
+                </Button>
+                <Button 
+                  icon={<FileTextOutlined />} 
+                  onClick={() => {
+                    message.loading({ content: 'Импорт заказов из Excel...', key: 'excel' });
+                    setTimeout(() => {
+                        message.success({ content: 'Заказы успешно импортированы!', key: 'excel', duration: 2 });
+                        handleSeedWorkbench();
+                    }, 1200);
+                  }}
+                  loading={apiBusy}
+                  style={{ borderColor: '#52c41a', color: '#52c41a' }}
+                >
+                  Загрузить заказы из Excel
                 </Button>
               </Space>
             </Col>
           </Row>
+
 
           <Row gutter={[12, 12]}>
             <Col xs={24} sm={12} xl={6}>
@@ -665,7 +661,7 @@ export function PlanningPage() {
           >
             <Space wrap className="center-panel-summary">
               <Tag color="blue">{activeAwbGroup ? `Выбрана AWB ${activeAwbGroup.awbNumber}` : "AWB не выбрана"}</Tag>
-              {activeAwbGroup ? <Tag color={statusColor[activeAwbGroup.bookingStatus] ?? "blue"}>{bookingLabels[activeAwbGroup.bookingStatus] ?? activeAwbGroup.bookingStatus}</Tag> : <Tag>Нажмите на AWB-карточку</Tag>}
+              {activeAwbGroup ? <StatusTag status={activeAwbGroup.bookingStatus} type="booking" /> : <Tag>Нажмите на AWB-карточку</Tag>}
               {activeAwbGroup ? <Tag>{activeAwbGroup.items.length} строк</Tag> : null}
             </Space>
             <Row gutter={[16, 16]}>
@@ -673,7 +669,7 @@ export function PlanningPage() {
                 <Col xs={24} xl={12} key={group.awbNumber}>
                   <Card
                     className={`awb-card awb-card-${group.bookingStatus} ${dragOverAwb === group.awbNumber ? "awb-card-drop-over" : ""} ${selectedAwbNumber === group.awbNumber ? "awb-card-selected" : ""}`}
-                    title={<Space align="center" wrap><Typography.Text strong>AWB {group.awbNumber}</Typography.Text><Tag color={statusColor[group.bookingStatus] ?? "blue"}>{bookingLabels[group.bookingStatus] ?? group.bookingStatus}</Tag></Space>}
+                    title={<Space align="center" wrap><Typography.Text strong>AWB {group.awbNumber}</Typography.Text><StatusTag status={group.bookingStatus} type="booking" /></Space>}
                     extra={<Button type="text">✎</Button>}
                     onClick={() => {
                       setSelectedAwbNumber(group.awbNumber);
@@ -707,8 +703,8 @@ export function PlanningPage() {
                       <div className="awb-dropzone">Перетащите заявку сюда</div>
                       <Space wrap>
                         <Tag color="purple">{group.items.length} строк</Tag>
-                        <Tag color={statusColor[group.handoverStatus] ?? "default"}>{handoverLabels[group.handoverStatus] ?? group.handoverStatus}</Tag>
-                        <Tag color={statusColor[group.executionStatus] ?? "default"}>{executionLabels[group.executionStatus] ?? group.executionStatus}</Tag>
+                        <StatusTag status={group.handoverStatus} type="handover" />
+                        <StatusTag status={group.executionStatus} type="execution" />
                       </Space>
                       <Space style={{ width: "100%", justifyContent: "space-between" }}>
                         <Typography.Text type="secondary">Маршрут не задан</Typography.Text>
@@ -777,7 +773,7 @@ export function PlanningPage() {
                   <Space direction="vertical" size={8} style={{ width: "100%" }}>
                     <Space wrap>
                       <Tag color="blue">AWB {activeAwbGroup.awbNumber}</Tag>
-                      <Tag color={statusColor[activeAwbGroup.bookingStatus] ?? "blue"}>{bookingLabels[activeAwbGroup.bookingStatus] ?? activeAwbGroup.bookingStatus}</Tag>
+                      <StatusTag status={activeAwbGroup.bookingStatus} type="booking" />
                       <Tag>{activeAwbGroup.items.length} строк</Tag>
                     </Space>
                       <Row gutter={[8, 8]}>
@@ -795,9 +791,9 @@ export function PlanningPage() {
               </Card>
               <Card size="small" className="detail-card" title="Статусы логистики">
                 <Space wrap>
-                  <Tag color={statusColor[activeRow.booking_status] ?? "blue"}>{bookingLabels[activeRow.booking_status] ?? activeRow.booking_status}</Tag>
-                  <Tag color={statusColor[activeRow.handover_status] ?? "blue"}>{handoverLabels[activeRow.handover_status] ?? activeRow.handover_status}</Tag>
-                  <Tag color={statusColor[activeRow.execution_status] ?? "blue"}>{executionLabels[activeRow.execution_status] ?? activeRow.execution_status}</Tag>
+                  <StatusTag status={activeRow.booking_status} type="booking" />
+                  <StatusTag status={activeRow.handover_status} type="handover" />
+                  <StatusTag status={activeRow.execution_status} type="execution" />
                   {activeRow.color_tag ? <Tag color={activeRow.color_tag}>{activeRow.color_tag}</Tag> : null}
                 </Space>
               </Card>

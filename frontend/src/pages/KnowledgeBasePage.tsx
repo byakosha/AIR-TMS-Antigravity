@@ -1,287 +1,112 @@
-import { useMemo, useState } from "react";
-import { Button, Card, Col, Empty, Input, Row, Space, Tag, Typography } from "antd";
+import { useState } from "react";
+import { Card, Col, Input, List, Modal, Row, Space, Tag, Typography } from "antd";
 
-type KnowledgeArticle = {
-  title: string;
-  description: string;
-  updated: string;
-  readTime: string;
-};
-
-type KnowledgeSection = {
-  key: string;
-  title: string;
-  subtitle: string;
-  accent: "blue" | "green" | "gold" | "purple";
-  summary: string;
-  articles: KnowledgeArticle[];
-};
-
-const knowledgeSections: KnowledgeSection[] = [
+const knowledgeSections = [
   {
     key: "directories",
     title: "Справочники и коды",
     subtitle: "Базовые каталоги, которые дают системе единый язык данных",
     accent: "blue",
-    summary: "Аэропорты, направления, авиакомпании, агенты и другие master data, на которых строится весь рабочий процесс.",
     articles: [
-      { title: "Коды аэропортов и московские направления", description: "Как читать сокращения, отображать IATA и не путать направление с аэропортом.", updated: "Сегодня", readTime: "4 мин" },
-      { title: "Список направлений для планирования", description: "Правила отображения направлений в фильтрах и в рабочем манифесте.", updated: "Вчера", readTime: "6 мин" },
-      { title: "Авиакомпании, агенты и соглашения", description: "Базовая структура справочников и что важно держать актуальным.", updated: "На неделе", readTime: "5 мин" },
+      { title: "Коды аэропортов и московские направления", description: "Как читать сокращения, отображать IATA и не путать направление с аэропортом.", text: "Аэропорты обозначаются 3-буквенными кодами IATA (SVO, VKO, DME). Особое внимание стоит уделить направлениям Москва (MOW), так как грузы могут распределяться между разными аэропортами узла." },
+      { title: "Список направлений", description: "Правила отображения направлений в фильтрах.", text: "Фильтры по направлениям применяются строго по коду IATA пункта назначения. Мультиплеерные рейсы отображаются по финальной точке." },
     ],
   },
   {
     key: "temperature",
     title: "Температуры и упаковка",
-    subtitle: "Медлогистика, контроль температуры и специальные режимы",
+    subtitle: "Медлогистика, контроль температуры и режимы",
     accent: "green",
-    summary: "Режимы +2..+8, +8, +15, +15..+25, +25, -20, -70 и без контроля температуры должны читаться одинаково понятно.",
     articles: [
-      { title: "Температурные режимы", description: "Справочник режимов и человекочитаемые названия для фильтров и карточек.", updated: "Сегодня", readTime: "3 мин" },
-      { title: "Совместимость грузов", description: "Что можно смешивать в одной группе, а что нужно разделять в разные AWB.", updated: "Вчера", readTime: "7 мин" },
-      { title: "Упаковка и тары", description: "Coolbox, dry ice, deep freeze и особые требования к оформлению.", updated: "На неделе", readTime: "5 мин" },
+      { title: "Температурные режимы", description: "Справочник режимов для карточек.", text: "+2..+8: Фарма. +15..+25: Общий мед.режим. -20: Глубокая заморозка. -70: Сухой лед. Требуется строгая проверка IATA DGR." },
+      { title: "Совместимость грузов", description: "Что можно смешивать в одной группе.", text: "Категорически запрещено оформлять грузы +2..+8 и +15..+25 в одной AWB без явного разрешения заказчика." },
     ],
   },
   {
     key: "planning",
     title: "AWB и планирование",
-    subtitle: "Рабочий манифест диспетчера, split / merge и ручное решение",
+    subtitle: "Рабочий манифест и split / merge",
     accent: "gold",
-    summary: "Как создавать авианакладные, делить строки, фиксировать план и держать процесс под контролем без Excel.",
     articles: [
-      { title: "Жизненный цикл AWB", description: "От создания до фиксации, подтверждения и передачи в исполнение.", updated: "Сегодня", readTime: "6 мин" },
-      { title: "Split и merge", description: "Когда дробить строку, когда объединять и как не потерять контекст.", updated: "Сегодня", readTime: "4 мин" },
-      { title: "Фиксация плана", description: "Правила, предупреждения и блокирующие условия перед фиксацией.", updated: "Вчера", readTime: "5 мин" },
+      { title: "Жизненный цикл AWB", description: "От создания до фиксации.", text: "1. Драфт (создана AWB). 2. Plan (привязаны строки). 3. Фиксация (готовность к отправке на склад)." },
+      { title: "Split и merge", description: "Деление строк на части.", text: "Сплит используется, когда количество мест не помещается на рейс. Мердж обратен сплиту." },
     ],
   },
-  {
-    key: "execution",
-    title: "Бронирование и исполнение",
-    subtitle: "Статусы брони, сдачи и факта вылета",
-    accent: "purple",
-    summary: "Поток от бронирования к сдаче и вылету, включая частичные ответы и переносы остатков.",
-    articles: [
-      { title: "Статусы бронирования", description: "confirmed, rejected, pending, partial и их операционный смысл.", updated: "Сегодня", readTime: "4 мин" },
-      { title: "Факт вылета", description: "Как отмечать flown_full, flown_partial, not_flown и postponed.", updated: "Вчера", readTime: "5 мин" },
-      { title: "Отклонения исполнения", description: "Перенос остатка, частичный вылет и журнал отклонений.", updated: "На неделе", readTime: "6 мин" },
-    ],
-  },
-];
-
-const quickPaths = [
-  "Температуры",
-  "Аэропорты",
-  "AWB",
-  "Бронирование",
-  "Исполнение",
-  "Split / merge",
-];
-
-const featuredItems = [
-  { label: "Быстрый старт", value: "Как найти нужный материал за 10 секунд" },
-  { label: "Частые правки", value: "Температуры, справочники, статусы и правила" },
-  { label: "Подсказка", value: "Лучше искать по термину или сокращению" },
 ];
 
 export function KnowledgeBasePage() {
   const [search, setSearch] = useState("");
-  const [activeSection, setActiveSection] = useState<string>("all");
+  const [selectedArticle, setSelectedArticle] = useState<{title: string, text: string} | null>(null);
 
-  const filteredSections = useMemo(() => {
-    const query = search.trim().toLowerCase();
-
-    return knowledgeSections
-      .map((section) => {
-        const sectionMatches =
-          activeSection === "all" ||
-          activeSection === section.key ||
-          section.title.toLowerCase().includes(activeSection.toLowerCase());
-
-        if (!sectionMatches) {
-          return null;
-        }
-
-        if (!query) {
-          return section;
-        }
-
-        const articles = section.articles.filter(
-          (article) =>
-            article.title.toLowerCase().includes(query) ||
-            article.description.toLowerCase().includes(query) ||
-            section.title.toLowerCase().includes(query) ||
-            section.summary.toLowerCase().includes(query),
-        );
-
-        if (articles.length === 0 && !section.title.toLowerCase().includes(query) && !section.summary.toLowerCase().includes(query)) {
-          return null;
-        }
-
-        return {
-          ...section,
-          articles: articles.length > 0 ? articles : section.articles,
-        };
-      })
-      .filter((section): section is KnowledgeSection => section !== null);
-  }, [activeSection, search]);
-
-  const hasQuery = search.trim().length > 0;
-  const noResults = hasQuery && filteredSections.length === 0;
-  const sectionsToShow = noResults ? [] : filteredSections;
+  const filtered = search.trim() 
+    ? knowledgeSections.map(s => ({
+        ...s,
+        articles: s.articles.filter(a => a.title.toLowerCase().includes(search.toLowerCase()) || a.description.toLowerCase().includes(search.toLowerCase()))
+      })).filter(s => s.articles.length > 0)
+    : knowledgeSections;
 
   return (
-    <Space direction="vertical" size="large" className="knowledge-page" style={{ width: "100%" }}>
-      <Card className="knowledge-hero" bordered={false}>
-        <Space direction="vertical" size="large" style={{ width: "100%" }}>
-          <Space direction="vertical" size={6} style={{ width: "100%" }}>
-            <Typography.Text className="knowledge-eyebrow">BIOCARD knowledge hub</Typography.Text>
-            <Typography.Title level={2} style={{ margin: 0 }}>
-              База знаний для диспетчерской команды
-            </Typography.Title>
-            <Typography.Paragraph type="secondary" style={{ maxWidth: 900, marginBottom: 0 }}>
-              Структурированный справочный центр для температур, сокращений, AWB, статусов и операционных правил. Один белый экран,
-              который помогает искать, читать и быстро переключаться между темами.
-            </Typography.Paragraph>
-          </Space>
-
-          <div className="knowledge-hero-grid">
-            {featuredItems.map((item) => (
-              <div className="knowledge-hero-stat" key={item.label}>
-                <Typography.Text type="secondary">{item.label}</Typography.Text>
-                <Typography.Title level={5} style={{ margin: "4px 0 0" }}>
-                  {item.value}
-                </Typography.Title>
-              </div>
-            ))}
-          </div>
-
-          <div className="knowledge-toolbar">
-            <Input.Search
-              allowClear
-              placeholder="Найти правило, сокращение, температуру или статус"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="knowledge-search"
-            />
-
-            <div className="knowledge-pills">
-              <Tag.CheckableTag checked={activeSection === "all"} onChange={() => setActiveSection("all")}>
-                Все
-              </Tag.CheckableTag>
-              {knowledgeSections.map((section) => (
-                <Tag.CheckableTag key={section.key} checked={activeSection === section.key} onChange={() => setActiveSection(section.key)}>
-                  {section.title}
-                </Tag.CheckableTag>
-              ))}
-            </div>
-          </div>
-        </Space>
-      </Card>
-
-      <div className="knowledge-layout">
-        <div className="knowledge-main">
-          <Card className="knowledge-featured-card" bordered={false} title="С чего начать">
-            <Space direction="vertical" size={10} style={{ width: "100%" }}>
-              {quickPaths.map((item, index) => (
-                <div className="knowledge-featured-item" key={item}>
-                  <div className="knowledge-featured-item-copy">
-                    <span className="knowledge-featured-index">{String(index + 1).padStart(2, "0")}</span>
-                    <Typography.Text strong>{item}</Typography.Text>
-                  </div>
-                  <Button type="text">Открыть</Button>
-                </div>
-              ))}
-            </Space>
-          </Card>
-
-          {noResults ? (
-            <Card className="knowledge-section-card" bordered={false}>
-              <Empty description="Ничего не найдено по этому запросу" />
-            </Card>
-          ) : (
-            <Row gutter={[16, 16]}>
-              {sectionsToShow.map((section) => (
-                <Col xs={24} xl={12} key={section.key}>
-                  <Card className={`knowledge-section-card knowledge-section-${section.accent}`} bordered={false}>
-                    <div className="knowledge-section-head">
-                      <div className="knowledge-section-head-copy">
-                        <Typography.Title level={5} style={{ margin: 0 }}>
-                          {section.title}
-                        </Typography.Title>
-                        <Typography.Text type="secondary">{section.subtitle}</Typography.Text>
-                      </div>
-                      <Tag color={section.accent}>{section.articles.length} статей</Tag>
-                    </div>
-
-                    <Typography.Paragraph type="secondary" className="knowledge-section-summary">
-                      {section.summary}
-                    </Typography.Paragraph>
-
-                    <div className="knowledge-article-list">
-                      {section.articles.map((article) => (
-                        <div className="knowledge-article-item" key={article.title}>
-                          <div className="knowledge-article-copy">
-                            <Typography.Text strong>{article.title}</Typography.Text>
-                            <Typography.Text type="secondary">{article.description}</Typography.Text>
-                          </div>
-                          <div className="knowledge-article-meta">
-                            <Tag>{article.readTime}</Tag>
-                            <Typography.Text type="secondary">{article.updated}</Typography.Text>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
-                </Col>
-              ))}
-            </Row>
-          )}
-        </div>
-
-        <div className="knowledge-rail">
-          <Card className="knowledge-rail-card" title="Как пользоваться" bordered={false}>
-            <div className="knowledge-rail-list">
-              <div className="knowledge-rail-note">
-                <span className="knowledge-rail-dot" />
-                <Typography.Text>Ищи по термину, сокращению или коду аэропорта.</Typography.Text>
-              </div>
-              <div className="knowledge-rail-note">
-                <span className="knowledge-rail-dot" />
-                <Typography.Text>Сначала открывай темы из блока «С чего начать».</Typography.Text>
-              </div>
-              <div className="knowledge-rail-note">
-                <span className="knowledge-rail-dot" />
-                <Typography.Text>Чаще всего обновляются температуры, статусы и справочники.</Typography.Text>
-              </div>
-            </div>
-          </Card>
-
-          <Card className="knowledge-rail-card" title="Что читают чаще всего" bordered={false}>
-            <Space direction="vertical" size={10} style={{ width: "100%" }}>
-              {[
-                "Температурные режимы",
-                "Коды аэропортов",
-                "Split / merge",
-                "Статусы бронирования",
-                "Отклонения исполнения",
-              ].map((item) => (
-                <div className="knowledge-rail-metric" key={item}>
-                  <Typography.Text strong>{item}</Typography.Text>
-                  <Typography.Text type="secondary">Операционные правила и быстрые пояснения</Typography.Text>
-                </div>
-              ))}
-            </Space>
-          </Card>
-
-          <Card className="knowledge-rail-card" title="Быстрые теги" bordered={false}>
-            <Space wrap>
-              {["AWB", "Airport", "Temp", "Booking", "Execution", "Audit"].map((tag) => (
-                <Tag key={tag}>{tag}</Tag>
-              ))}
-            </Space>
-          </Card>
+    <Space direction="vertical" size="large" style={{ width: "100%", paddingBottom: 40 }}>
+      {/* Premium Luxury Hero */}
+      <div className="premium-hero" style={{ padding: "40px" }}>
+        <Typography.Title level={2} style={{ margin: 0, fontWeight: 700, letterSpacing: '-0.03em' }}>
+          База знаний
+        </Typography.Title>
+        <Typography.Text style={{ color: 'var(--text-muted)', fontSize: 16 }}>
+          Структурированный справочный центр. Нажмите на любую статью, чтобы открыть подробное руководство.
+        </Typography.Text>
+        <div style={{ marginTop: 24, padding: 4 }}>
+          <Input.Search
+            allowClear
+            size="large"
+            placeholder="Найти правило, сокращение или статус..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ maxWidth: 600, boxShadow: 'var(--shadow-md)', borderRadius: 8 }}
+          />
         </div>
       </div>
+
+      <Row gutter={[24, 24]}>
+        {filtered.map(section => (
+          <Col xs={24} lg={12} key={section.key}>
+            <Card title={section.title} bordered={false} style={{ height: '100%', boxShadow: 'var(--shadow-sm)' }} bodyStyle={{ padding: 0 }}>
+              <div style={{ padding: '0 24px 16px', color: 'var(--text-muted)' }}>{section.subtitle}</div>
+              <List
+                dataSource={section.articles}
+                renderItem={(article) => (
+                  <List.Item 
+                    onClick={() => setSelectedArticle({ title: article.title, text: article.text })}
+                    style={{ padding: '16px 24px', cursor: 'pointer', transition: 'all 0.2s', borderBottom: '1px solid var(--border-subtle)' }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#fafafa'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <List.Item.Meta
+                      title={<Typography.Text strong style={{ color: 'var(--primary)', fontSize: 15 }}>{article.title}</Typography.Text>}
+                      description={article.description}
+                    />
+                  </List.Item>
+                )}
+              />
+            </Card>
+          </Col>
+        ))}
+      </Row>
+
+      <Modal 
+        title={<Typography.Title level={4} style={{margin: 0}}>{selectedArticle?.title}</Typography.Title>}
+        open={!!selectedArticle} 
+        onCancel={() => setSelectedArticle(null)}
+        footer={[<Button key="close" type="primary" onClick={() => setSelectedArticle(null)}>Понятно</Button>]}
+        width={700}
+      >
+        <div style={{ padding: '16px 0', fontSize: 15, lineHeight: 1.6, color: 'var(--text-main)' }}>
+          {selectedArticle?.text}
+        </div>
+        <div style={{ marginTop: 24, padding: 16, background: '#f8fbff', borderRadius: 8, border: '1px solid #dce7f5' }}>
+          <Typography.Text type="secondary" style={{fontSize: 13}}>Информация актуальна. Если вы нашли неточность, обратитесь к администратору.</Typography.Text>
+        </div>
+      </Modal>
     </Space>
   );
 }
