@@ -1,5 +1,8 @@
+from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+
+from app.models.entities import UserViewProfile
 
 from app.db.session import get_db
 from app.schemas.view_profile import UserViewProfileCreate, UserViewProfileRead, UserViewProfileUpdate

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Alert, Button, Card, Col, Row, Space, Tag, Timeline, Typography, message } from "antd";
+import { Alert, Button, Card, Col, Row, Space, Tag, Timeline, Typography, message, Table } from "antd";
+import type { ColumnsType } from "antd/es/table";
 
 import { fetchOverviewSummary, type OverviewSummary } from "../api";
 
@@ -65,12 +66,28 @@ const bookingColor: Record<string, string> = {
   fixed: "blue",
 };
 
+const bookingLabel: Record<string, string> = {
+  pending: "Ожидает",
+  draft: "Черновик",
+  confirmed: "Подтверждено",
+  partial: "Частично",
+  fixed: "Фикс",
+};
+
 const executionColor: Record<string, string> = {
   pending: "default",
   flown_full: "green",
   flown_partial: "orange",
   not_flown: "red",
   postponed: "volcano",
+};
+
+const executionLabel: Record<string, string> = {
+  pending: "В очереди",
+  flown_full: "Вылетело",
+  flown_partial: "Частичный вылет",
+  not_flown: "Не вылетело",
+  postponed: "Отложено",
 };
 
 export function OverviewPage() {
@@ -107,38 +124,32 @@ export function OverviewPage() {
       <Card className="overview-hero" bordered={false} loading={loading}>
         <div className="overview-hero-grid">
           <div className="overview-hero-copy">
-            <Typography.Text className="hero-eyebrow">BIOCARD operational cockpit</Typography.Text>
+            <Typography.Text className="hero-eyebrow">ОПЕРАЦИОННЫЙ ПУЛЬТ BIOCARD</Typography.Text>
             <Typography.Title level={2} style={{ margin: "8px 0 8px" }}>
-              Управление авиационным этапом, бронированием и исполнением в одном рабочем месте
+              Управление авиационным этапом, бронированием и исполнением в едином интерфейсе
             </Typography.Title>
             <Typography.Paragraph type="secondary" style={{ maxWidth: 860, marginBottom: 20 }}>
-              Единый обзор показывает поток сегодняшнего дня: где план, где бронь, где частичное исполнение и где нужно вмешательство
-              диспетчера.
+              Оперативный обзор потока текущего дня: план, бронирование, статус исполнения и критические точки, требующие вмешательства диспетчера.
             </Typography.Paragraph>
 
             <Space wrap className="overview-actions">
-              <Button type="primary" onClick={() => navigate('/planning')}>Открыть планирование</Button>
-              <Button onClick={() => navigate('/execution')}>Перейти к исполнению</Button>
+              <Button type="primary" size="large" onClick={() => navigate('/planning')}>Планирование</Button>
+              <Button size="large" onClick={() => navigate('/execution')}>Исполнение</Button>
+              <Button size="large" onClick={() => navigate('/booking')}>Бронирование</Button>
             </Space>
           </div>
 
           <div className="overview-hero-brief">
             <div className="overview-hero-brief-card">
-              <Typography.Text type="secondary">Сегодня в работе</Typography.Text>
+              <Typography.Text type="secondary">Активных строк</Typography.Text>
               <Typography.Title level={2} style={{ margin: "6px 0 0" }}>
                 {heroValue}
               </Typography.Title>
-              <Typography.Text type="secondary">строк на рабочем столе</Typography.Text>
+              <Typography.Text type="secondary">в текущем манифесте</Typography.Text>
             </div>
             <div className="overview-hero-brief-card">
               <Typography.Text type="secondary">Фокус смены</Typography.Text>
-              <Typography.Text strong>AWB · Booking · Execution</Typography.Text>
-            </div>
-            <div className="overview-hero-brief-card overview-hero-brief-card-muted">
-              <Typography.Text type="secondary">Смысл экрана</Typography.Text>
-              <Typography.Text>
-                Сразу видеть поток, а не читать длинные списки.
-              </Typography.Text>
+              <Typography.Text strong style={{ display: 'block', marginTop: 4 }}>AWB · БРОНЬ · ВЫЛЕТЫ</Typography.Text>
             </div>
           </div>
         </div>
@@ -159,59 +170,79 @@ export function OverviewPage() {
       </Row>
 
       <Row gutter={[16, 16]}>
-        {summary.pipeline.map((stage) => (
-          <Col xs={24} sm={12} xl={6} key={stage.label}>
-            <Card className={`overview-stage overview-stage-${stage.accent}`} bordered={false}>
-              <Typography.Text type="secondary">{stage.label}</Typography.Text>
-              <Typography.Title level={2} style={{ margin: "6px 0 4px" }}>
-                {stage.value}
-              </Typography.Title>
-              <Typography.Text className="overview-stage-note">{stage.subtitle}</Typography.Text>
-            </Card>
-          </Col>
-        ))}
-      </Row>
-
-      <Row gutter={[16, 16]}>
         <Col xs={24} xl={15}>
-          <Card className="overview-panel" title="Операционный поток" bordered={false}>
-            <Timeline
-              className="overview-timeline"
-              items={[
-                { color: "green", children: "Заказы загружены из 1С TMS и разложены по направлениям" },
-                { color: "blue", children: "Рабочий манифест обновлен и отфильтрован" },
-                { color: "orange", children: "Часть AWB ждет подтверждения по брони" },
-                { color: "red", children: "Есть частичное исполнение и остатки для переноса" },
-              ]}
+          <Card 
+            className="overview-panel" 
+            title={<Typography.Title level={4} style={{ margin: 0 }}>Операционный мониторинг заказов</Typography.Title>} 
+            bordered={false}
+          >
+            <Table
+              dataSource={summary.snapshots.length > 0 ? summary.snapshots : fallbackSummary.snapshots}
+              loading={loading}
+              pagination={{ pageSize: 5 }}
+              rowKey={(record) => `${record.direction_code}-${record.airport_code}-${record.awb_number}`}
+              className="overview-table"
+              onRow={(record) => ({
+                className: record.booking_status === 'confirmed' 
+                  ? 'overview-row-confirmed'
+                  : record.booking_status === 'pending' 
+                  ? 'overview-row-pending' 
+                  : record.execution_status === 'flown_partial' 
+                  ? 'overview-row-critical' 
+                  : ''
+              })}
+              columns={[
+                {
+                  title: 'Направление',
+                  dataIndex: 'direction_code',
+                  key: 'direction',
+                  render: (text, record) => (
+                    <Space direction="vertical" size={0}>
+                      <Typography.Text strong>{text}</Typography.Text>
+                      <Typography.Text type="secondary" style={{ fontSize: '11px' }}>{record.direction_name}</Typography.Text>
+                    </Space>
+                  )
+                },
+                {
+                  title: 'Аэропорт',
+                  dataIndex: 'airport_code',
+                  key: 'airport',
+                  render: (text) => <Tag>{text}</Tag>
+                },
+                {
+                  title: 'Темпер. режим',
+                  dataIndex: 'temperature_mode',
+                  key: 'temp',
+                  render: (text) => <Tag color="blue">{text}</Tag>
+                },
+                {
+                  title: 'Авианакладная',
+                  dataIndex: 'awb_number',
+                  key: 'awb',
+                  render: (text) => text ? <Typography.Text strong>{text}</Typography.Text> : <Typography.Text type="secondary">Не задана</Typography.Text>
+                },
+                {
+                  title: 'Статус брони',
+                  dataIndex: 'booking_status',
+                  key: 'booking',
+                  render: (status: string) => (
+                    <Tag color={bookingColor[status] ?? "default"}>
+                      {(bookingLabel[status] ?? status).toUpperCase()}
+                    </Tag>
+                  )
+                },
+                {
+                  title: 'Исполнение',
+                  dataIndex: 'execution_status',
+                  key: 'execution',
+                  render: (status: string) => (
+                    <Tag color={executionColor[status] ?? "default"}>
+                      {(executionLabel[status] ?? status).toUpperCase()}
+                    </Tag>
+                  )
+                }
+              ] as ColumnsType<any>}
             />
-
-            <div className="overview-snapshot-grid">
-              {(summary.snapshots.length > 0 ? summary.snapshots : fallbackSummary.snapshots).map((snapshot) => (
-                <div className="overview-snapshot-card" key={`${snapshot.direction_code}-${snapshot.airport_code}`}>
-                  <div className="overview-snapshot-head">
-                    <div>
-                      <Typography.Text strong>{snapshot.direction_code}</Typography.Text>
-                      <Typography.Text type="secondary" className="overview-snapshot-subtitle">
-                        {snapshot.direction_name}
-                      </Typography.Text>
-                    </div>
-                    <Tag>{snapshot.airport_code}</Tag>
-                  </div>
-
-                  <div className="overview-snapshot-tags">
-                    <Tag color="blue">{snapshot.temperature_mode}</Tag>
-                    <Tag color={bookingColor[snapshot.booking_status] ?? "default"}>{snapshot.booking_status}</Tag>
-                    <Tag color={executionColor[snapshot.execution_status] ?? "default"}>{snapshot.execution_status}</Tag>
-                  </div>
-
-                  <div className="overview-snapshot-meta">
-                    <span>{snapshot.awb_number ?? "AWB не задан"}</span>
-                    <span>{snapshot.planned_flight_number ?? "Рейс не задан"}</span>
-                    <span>{snapshot.places_count} мест / {snapshot.weight_total.toFixed(1)} кг</span>
-                  </div>
-                </div>
-              ))}
-            </div>
           </Card>
         </Col>
 
@@ -231,7 +262,7 @@ export function OverviewPage() {
               </Space>
             </Card>
 
-            <Card className="overview-panel" title="Что важно держать в голове" bordered={false}>
+            <Card className="overview-panel" title="Важные напоминания" bordered={false}>
               <Space direction="vertical" size={10} style={{ width: "100%" }}>
                 {summary.operational_notes.map((note) => (
                   <div className="overview-note" key={note}>
@@ -244,11 +275,11 @@ export function OverviewPage() {
 
             <Card className="overview-panel" title="Быстрые переходы" bordered={false}>
               <Space wrap>
-                <Tag color="blue" style={{cursor: 'pointer'}} onClick={() => navigate('/planning')}>Planning</Tag>
-                <Tag color="green" style={{cursor: 'pointer'}} onClick={() => navigate('/execution')}>Execution</Tag>
-                <Tag color="gold" style={{cursor: 'pointer'}} onClick={() => navigate('/booking')}>Booking</Tag>
-                <Tag color="purple" style={{cursor: 'pointer'}} onClick={() => navigate('/settings')}>Settings</Tag>
-                <Tag color="default" style={{cursor: 'pointer'}} onClick={() => navigate('/knowledge-base')}>Knowledge</Tag>
+                <Tag color="blue" style={{cursor: 'pointer'}} onClick={() => navigate('/planning')}>Планирование</Tag>
+                <Tag color="green" style={{cursor: 'pointer'}} onClick={() => navigate('/execution')}>Исполнение</Tag>
+                <Tag color="gold" style={{cursor: 'pointer'}} onClick={() => navigate('/booking')}>Бронирование</Tag>
+                <Tag color="purple" style={{cursor: 'pointer'}} onClick={() => navigate('/settings')}>Настройки</Tag>
+                <Tag color="default" style={{cursor: 'pointer'}} onClick={() => navigate('/knowledge-base')}>База знаний</Tag>
               </Space>
               <Button type="primary" block style={{ marginTop: 16 }} onClick={() => navigate('/planning')}>
                 Открыть рабочий манифест
