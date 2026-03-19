@@ -1,0 +1,27 @@
+{
+  "name": "biocard-aviation-tms-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "antd": "^5.28.0",
+    "axios": "^1.11.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-router-dom": "^7.8.2",
+    "zustand": "^5.0.7"
+  },
+  "devDependencies": {
+    "@rollup/rollup-win32-x64-msvc": "^4.59.0",
+    "@types/react": "^19.1.11",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^5.0.2",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.3"
+  }
+}
