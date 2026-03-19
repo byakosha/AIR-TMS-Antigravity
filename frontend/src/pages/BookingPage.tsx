@@ -77,8 +77,10 @@ export function BookingPage() {
             }
           >
             <Table
+              className="overview-table"
               pagination={false}
               dataSource={data}
+              rowClassName={(record) => record.status === 'confirmed' ? 'overview-row-confirmed' : record.status === 'pending' ? 'overview-row-pending' : ''}
               columns={[
                 { title: "Дата", dataIndex: "date", key: "date" },
                 { title: "AWB", dataIndex: "awb", key: "awb" },
@@ -89,7 +91,7 @@ export function BookingPage() {
                   title: "Статус",
                   dataIndex: "status",
                   key: "status",
-                  render: (value: string) => <Tag color="gold">{value}</Tag>,
+                  render: (value: string) => <Tag color={value === 'confirmed' ? 'green' : 'gold'}>{value === 'confirmed' ? 'Подтверждено' : 'Ожидает'}</Tag>,
                 },
               ]}
             />

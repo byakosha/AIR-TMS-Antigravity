@@ -79,6 +79,7 @@ class PlanningWorkbenchRow(TimestampMixin, Base):
     custom_sort_order: Mapped[int] = mapped_column(Integer, default=0)
     owner_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     is_outside_final_manifest: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_auto_planned: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class AirWaybill(TimestampMixin, Base):

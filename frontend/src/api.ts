@@ -10,6 +10,7 @@ export type WorkbenchRow = {
   temperature_mode: string;
   cargo_profile: string;
   box_type_summary: string | null;
+  client_name?: string | null;
   places_count: number;
   weight_total: number;
   volume_total: number;

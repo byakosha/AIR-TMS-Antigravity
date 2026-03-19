@@ -374,12 +374,12 @@ export function SettingsPage() {
                   <div className="settings-user-copy">
                     <Typography.Text strong>{user.full_name}</Typography.Text>
                     <Typography.Text type="secondary">
-                      {user.username} · {user.role}
+                      {user.username} · {user.role === 'admin' ? 'Администратор' : user.role === 'planner' ? 'Планировщик' : user.role === 'execution_operator' ? 'Оператор исполнения' : user.role === 'supervisor' ? 'Руководитель смены' : user.role}
                     </Typography.Text>
                   </div>
                   <div className="settings-user-meta">
-                    <Tag color={user.is_superuser ? "blue" : "default"}>{user.is_superuser ? "superuser" : "user"}</Tag>
-                    <Tag color={user.is_active ? "green" : "red"}>{user.is_active ? "active" : "disabled"}</Tag>
+                    <Tag color={user.is_superuser ? "blue" : "default"}>{user.is_superuser ? "Админ" : "Сотрудник"}</Tag>
+                    <Tag color={user.is_active ? "green" : "red"}>{user.is_active ? "Активен" : "Отключен"}</Tag>
                     <Button danger type="text" onClick={() => void handleDeleteUser(user.id)}>
                       Удалить
                     </Button>
@@ -412,10 +412,10 @@ export function SettingsPage() {
             <Form.Item name="role" label="Роль" rules={[{ required: true, message: "Выберите роль" }]}>
               <Select
                 options={[
-                  { value: "admin", label: "admin" },
-                  { value: "planner", label: "planner" },
-                  { value: "execution_operator", label: "execution_operator" },
-                  { value: "supervisor", label: "supervisor" },
+                  { value: "admin", label: "Администратор" },
+                  { value: "planner", label: "Планировщик" },
+                  { value: "execution_operator", label: "Оператор исполнения" },
+                  { value: "supervisor", label: "Руководитель смены" },
                 ]}
               />
             </Form.Item>

@@ -16,6 +16,9 @@ from app.schemas.workbench import (
     WorkbenchFilters,
     WorkbenchRowRead,
 )
+from app.models.entities import PlanningWorkbenchRow, User
+from app.models.planning_rules import AirlineDetails, AwbBlankRange, SupplyChainRule
+from app.core.security import get_current_user
 from app.schemas.changelog import ChangeLogRead
 from app.services.workbench import (
     assign_awb_to_row,
@@ -186,6 +189,84 @@ def finalize_plan(payload: FixPlanRequest, db: Session = Depends(get_db)) -> Ope
         raise HTTPException(status_code=400, detail={"message": "Plan fixation blocked", "errors": errors})
     db.commit()
     return OperationResult(status="ok", message="Plan fixed", affected_row_ids=[row.id for row in rows])
+
+
+@router.post("/auto-plan")
+def auto_plan_workbench(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Automated preliminary planning based on Supply Chain rules.
+    1. Finds all pending rows without AWBs.
+    2. Groups by (airport_code, temperature_mode).
+    3. Finds carrier from SupplyChainRule.
+    4. Allocates an AWB from AwbBlankRange.
+    5. Returns warnings if no blanks or no rules.
+    """
+    unplanned_rows = db.query(PlanningWorkbenchRow).filter(
+        PlanningWorkbenchRow.awb_number.is_(None),
+        PlanningWorkbenchRow.booking_status == "pending"
+    ).all()
+
+    if not unplanned_rows:
+        return {"status": "info", "message": "Нет строк для планирования"}
+
+    rules = {r.airport_code: r.carrier_code for r in db.query(SupplyChainRule).all()}
+    
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for row in unplanned_rows:
+        groups[(row.airport_code, row.temperature_mode)].append(row)
+    
+    warnings = []
+    success_count = 0
+    assigned_awbs = 0
+
+    for (airport, temp), rows in groups.items():
+        carrier = rules.get(airport)
+        if not carrier:
+            warnings.append(f"Нет цепи поставок для направления {airport}")
+            continue
+
+        airline = db.query(AirlineDetails).filter(AirlineDetails.carrier_code == carrier).first()
+        if not airline:
+            warnings.append(f"Авиакомпания {carrier} не найдена в системе")
+            continue
+
+        blank_range = db.query(AwbBlankRange).filter(
+            AwbBlankRange.airline_id == airline.id,
+            AwbBlankRange.is_active == True,
+            AwbBlankRange.current_number <= AwbBlankRange.end_number
+        ).first()
+
+        if not blank_range:
+            warnings.append(f"У авиакомпании {carrier} (маршрут на {airport}) закончились бланки AWB!")
+            continue
+
+        base_num = str(blank_range.current_number).zfill(7)
+        check_digit = int(base_num) % 7
+        awb_full = f"{airline.awb_prefix}-{base_num}{check_digit}"
+
+        blank_range.current_number += 1
+
+        for row in rows:
+            row.awb_number = awb_full
+            row.is_auto_planned = True
+            success_count += 1
+        
+        assigned_awbs += 1
+
+    db.commit()
+
+    if not success_count and warnings:
+        raise HTTPException(status_code=400, detail=" | ".join(warnings))
+
+    msg = f"Успешно спланировано {success_count} строк в {assigned_awbs} AWB."
+    if warnings:
+        msg += " Предупреждения: " + "; ".join(warnings)
+
+    return {"status": "success", "message": msg}
 
 
 @router.get("/snapshot/{row_id}")

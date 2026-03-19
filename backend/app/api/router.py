@@ -11,6 +11,7 @@ from app.api.v1.endpoints import (
     view_profiles,
     workbench,
     flights,
+    planning_rules,
 )
 
 api_router = APIRouter()
@@ -24,3 +25,4 @@ api_router.include_router(overview.router, prefix="/overview", tags=["overview"]
 api_router.include_router(view_profiles.router, prefix="/view-profiles", tags=["view_profiles"])
 api_router.include_router(settings.router, prefix="/settings", tags=["settings"])
 api_router.include_router(flights.router, prefix="/flights", tags=["flights"])
+api_router.include_router(planning_rules.router, prefix="/planning-rules", tags=["planning_rules"])
