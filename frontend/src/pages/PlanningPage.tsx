@@ -26,10 +26,12 @@ import {
 } from "antd";
 import type { DefaultOptionType } from "antd/es/select";
 import type { ColumnsType, ColumnType } from "antd/es/table";
+import { CopyOutlined, DragOutlined, PlusOutlined, RobotOutlined } from "@ant-design/icons";
 
 import {
   assignAwb,
   assignFlight,
+  autoPlan,
   createViewProfile,
   downloadWorkbenchRowsCsv,
   fetchAirports,
@@ -318,8 +320,24 @@ export function PlanningPage() {
       message.success("Представление сохранено");
     } catch (error) {
       message.error(error instanceof Error ? error.message : "Не удалось сохранить представление");
-    } finally { setApiBusy(false); }
+    } finally {
+      setApiBusy(false);
+    }
   }
+
+  async function handleAutoPlan() {
+    setApiBusy(true);
+    try {
+      const res = await autoPlan();
+      message.success(res.message);
+      await loadRows(filters);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "Авто-планирование не удалось");
+    } finally {
+      setApiBusy(false);
+    }
+  }
+
   async function handleDownloadCsv() {
     setApiBusy(true);
     try {
@@ -454,12 +472,15 @@ export function PlanningPage() {
             </Col>
             <Col>
               <Space wrap>
+                <Button type="primary" style={{ backgroundColor: '#faad14', borderColor: '#faad14' }} onClick={handleAutoPlan} icon={<RobotOutlined />} loading={apiBusy}>
+                  Авто-планирование
+                </Button>
                 <Button onClick={() => setFilterModalOpen(true)}>
                   Фильтры {activeFilterTags.length ? `(${activeFilterTags.length})` : ""}
                 </Button>
                 <Segmented value={viewMode} onChange={(value) => setViewMode(value as ViewMode)} options={[{ label: "Канбан", value: "kanban" }, { label: "Таблица (Excel)", value: "table" }]} />
                 <Button type="primary" onClick={() => setAwbOpen(true)} disabled={!activeRow}>
-                  + Новая авианакладная (AWB)
+                  + Новая AWB
                 </Button>
                 <Button onClick={handleDownloadCsv} loading={apiBusy}>
                   Скачать CSV

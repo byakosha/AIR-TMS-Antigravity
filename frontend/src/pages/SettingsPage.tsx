@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button, Card, Col, Divider, Empty, Form, Input, List, Modal, Row, Select, Space, Spin, Tag, Typography, message } from "antd";
 
-import { createUser, deleteUser, fetchSettingsSummary, fetchUsers, type SettingsSummary, type UserRecord } from "../api";
+import { createUser, deleteUser, fetchSettingsSummary, fetchUsers, type SettingsSummary, type UserRecord, getAirlines, createAirline, createAwbRange, getSupplyChains, createSupplyChainRule, deleteSupplyChainRule, type AirlineDetails, type AwbBlankRange, type SupplyChainRule } from "../api";
 
 const defaultSummary: SettingsSummary = {
   hero_stats: [
@@ -139,6 +139,37 @@ export function SettingsPage() {
     return () => {
       active = false;
     };
+  }, []);
+
+  const [airlines, setAirlines] = useState<AirlineDetails[]>([]);
+  const [supplyChains, setSupplyChains] = useState<SupplyChainRule[]>([]);
+  const [rulesLoading, setRulesLoading] = useState(true);
+
+  const [airlineModalOpen, setAirlineModalOpen] = useState(false);
+  const [rangeModalOpen, setRangeModalOpen] = useState(false);
+  const [chainModalOpen, setChainModalOpen] = useState(false);
+  
+  const [activeAirlineId, setActiveAirlineId] = useState<number | null>(null);
+
+  const [airlineForm] = Form.useForm();
+  const [rangeForm] = Form.useForm();
+  const [chainForm] = Form.useForm();
+
+  const loadRules = async () => {
+    setRulesLoading(true);
+    try {
+      setAirlines(await getAirlines());
+      setSupplyChains(await getSupplyChains());
+    } catch (err) {
+      console.error(err);
+      message.error("Failed to load supply chains and airlines");
+    } finally {
+      setRulesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadRules();
   }, []);
 
   const filteredSections = useMemo(() => {
@@ -424,6 +455,127 @@ export function SettingsPage() {
             </Form.Item>
           </Form>
         </Modal>
+
+        {/* --- SUPPLY CHAINS --- */}
+        <Card
+          className="settings-users-card"
+          title="Цепи поставок (Маршрутизация)"
+          bordered={false}
+          extra={<Button type="primary" onClick={() => setChainModalOpen(true)}>Добавить правило</Button>}
+        >
+          <Spin spinning={rulesLoading}>
+            <List
+              dataSource={supplyChains}
+              renderItem={(chain) => (
+                <List.Item
+                  actions={[<Button danger type="text" onClick={async () => {
+                    try {
+                      await deleteSupplyChainRule(chain.id);
+                      message.success("Правило удалено");
+                      void loadRules();
+                    } catch { message.error("Ошибка"); }
+                  }}>Удалить</Button>]}
+                >
+                  <List.Item.Meta
+                    title={<Typography.Text strong>{chain.airport_code} ➝ {chain.carrier_code}</Typography.Text>}
+                    description={`Все грузы в ${chain.airport_code} будут автоматически направляться на рейсы ${chain.carrier_code}`}
+                  />
+                </List.Item>
+              )}
+            />
+          </Spin>
+        </Card>
+
+        {/* --- AIRLINES & BLANKS --- */}
+        <Card
+          className="settings-users-card"
+          title="Авиакомпании и бланки AWB"
+          bordered={false}
+          extra={<Button type="primary" onClick={() => setAirlineModalOpen(true)}>Добавить авиакомпанию</Button>}
+        >
+          <Spin spinning={rulesLoading}>
+            <List
+              dataSource={airlines}
+              renderItem={(airline) => (
+                <List.Item
+                  actions={[
+                    <Button type="link" onClick={() => { setActiveAirlineId(airline.id); setRangeModalOpen(true); }}>Добавить бланки</Button>
+                  ]}
+                >
+                  <List.Item.Meta
+                    title={<Typography.Text strong>{airline.name} ({airline.carrier_code})</Typography.Text>}
+                    description={
+                      <Space direction="vertical" size={2}>
+                        <Typography.Text type="secondary">Префикс AWB: {airline.awb_prefix}</Typography.Text>
+                        {airline.ranges && airline.ranges.length > 0 ? (
+                          airline.ranges.map(r => (
+                            <Tag color={r.is_active ? "green" : "default"} key={r.id}>
+                              Диапазон: {r.start_number} - {r.end_number} (Текущий: {r.current_number})
+                            </Tag>
+                          ))
+                        ) : (
+                          <Typography.Text type="danger">Нет активных бланков</Typography.Text>
+                        )}
+                      </Space>
+                    }
+                  />
+                </List.Item>
+              )}
+            />
+          </Spin>
+        </Card>
+
+        {/* Modals for Rules */}
+        <Modal title="Новое правило цепи поставок" open={chainModalOpen} onCancel={() => setChainModalOpen(false)} onOk={async () => {
+          try {
+            const vals = await chainForm.validateFields();
+            await createSupplyChainRule(vals);
+            message.success("Правило добавлено");
+            setChainModalOpen(false);
+            chainForm.resetFields();
+            void loadRules();
+          } catch(e) { console.error(e); }
+        }}>
+          <Form form={chainForm} layout="vertical">
+            <Form.Item name="airport_code" label="Аэропорт назначения (Например: KJA)" rules={[{required: true}]}><Input /></Form.Item>
+            <Form.Item name="carrier_code" label="Авиакомпания (Например: SU)" rules={[{required: true}]}><Input /></Form.Item>
+          </Form>
+        </Modal>
+
+        <Modal title="Новая авиакомпания" open={airlineModalOpen} onCancel={() => setAirlineModalOpen(false)} onOk={async () => {
+          try {
+            const vals = await airlineForm.validateFields();
+            await createAirline(vals);
+            message.success("Авиакомпания добавлена");
+            setAirlineModalOpen(false);
+            airlineForm.resetFields();
+            void loadRules();
+          } catch(e) { message.error("Ошибка добавления"); }
+        }}>
+          <Form form={airlineForm} layout="vertical">
+            <Form.Item name="carrier_code" label="Код IATA (Например: SU)" rules={[{required: true}]}><Input /></Form.Item>
+            <Form.Item name="name" label="Название (Например: Аэрофлот)" rules={[{required: true}]}><Input /></Form.Item>
+            <Form.Item name="awb_prefix" label="Префикс AWB (Например: 555)" rules={[{required: true}]}><Input /></Form.Item>
+          </Form>
+        </Modal>
+
+        <Modal title="Добавить диапазон бланков" open={rangeModalOpen} onCancel={() => setRangeModalOpen(false)} onOk={async () => {
+          if (!activeAirlineId) return;
+          try {
+            const vals = await rangeForm.validateFields();
+            await createAwbRange(activeAirlineId, vals);
+            message.success("Диапазон добавлен");
+            setRangeModalOpen(false);
+            rangeForm.resetFields();
+            void loadRules();
+          } catch(e) { message.error("Ошибка добавления бланков"); }
+        }}>
+          <Form form={rangeForm} layout="vertical">
+            <Form.Item name="start_number" label="Начальный номер (7 цифр)" rules={[{required: true}]}><Input type="number" /></Form.Item>
+            <Form.Item name="end_number" label="Конечный номер (7 цифр)" rules={[{required: true}]}><Input type="number" /></Form.Item>
+          </Form>
+        </Modal>
+
       </Space>
     </Spin>
   );

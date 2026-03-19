@@ -28,6 +28,40 @@ export type WorkbenchRow = {
   is_outside_final_manifest: boolean;
 };
 
+export interface AuditLogRecord {
+  id: number;
+  user_id: number;
+  action_type: string;
+  target_resource: string;
+  target_id?: string;
+  old_values_json?: any;
+  new_values_json?: any;
+  created_at: string;
+}
+
+export interface AwbBlankRange {
+  id: number;
+  airline_id: number;
+  start_number: number;
+  end_number: number;
+  current_number: number;
+  is_active: boolean;
+}
+
+export interface AirlineDetails {
+  id: number;
+  carrier_code: string;
+  name: string;
+  awb_prefix: string;
+  ranges: AwbBlankRange[];
+}
+
+export interface SupplyChainRule {
+  id: number;
+  airport_code: string;
+  carrier_code: string;
+}
+
 export type Flight = {
   id: number;
   flight_number: string;
@@ -318,6 +352,18 @@ export async function fixPlan(payload: Record<string, unknown>): Promise<{ statu
   return response.json();
 }
 
+export async function autoPlan(): Promise<{ status: string; message: string }> {
+  const response = await fetch(`${API_BASE_URL}/workbench/auto-plan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `Failed to auto-plan: ${response.status}`);
+  }
+  return response.json();
+}
+
 export async function fetchViewProfiles(userId = 1): Promise<UserViewProfile[]> {
   const response = await fetch(`${API_BASE_URL}/view-profiles?user_id=${userId}`);
   if (!response.ok) {
@@ -444,4 +490,55 @@ export async function deleteUser(userId: number): Promise<void> {
     const detail = await response.text();
     throw new Error(detail || `Failed to delete user: ${response.status}`);
   }
+}
+
+// --- Rules & Catalogues ---
+
+export async function getAirlines(): Promise<AirlineDetails[]> {
+  const response = await fetch(`${API_BASE_URL}/planning-rules/airlines`);
+  if (!response.ok) throw new Error("Failed to fetch airlines");
+  return response.json();
+}
+
+export async function createAirline(data: Partial<AirlineDetails>): Promise<AirlineDetails> {
+  const response = await fetch(`${API_BASE_URL}/planning-rules/airlines`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+export async function createAwbRange(airlineId: number, data: Partial<AwbBlankRange>): Promise<AwbBlankRange> {
+  const response = await fetch(`${API_BASE_URL}/planning-rules/airlines/${airlineId}/ranges`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+export async function getSupplyChains(): Promise<SupplyChainRule[]> {
+  const response = await fetch(`${API_BASE_URL}/planning-rules/supply-chains`);
+  if (!response.ok) throw new Error("Failed to fetch supply chains");
+  return response.json();
+}
+
+export async function createSupplyChainRule(data: Partial<SupplyChainRule>): Promise<SupplyChainRule> {
+  const response = await fetch(`${API_BASE_URL}/planning-rules/supply-chains`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+export async function deleteSupplyChainRule(ruleId: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/planning-rules/supply-chains/${ruleId}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) throw new Error(await response.text());
 }
