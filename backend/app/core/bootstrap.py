@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import time
 
-from sqlalchemy import text
-
 from app.db.base import Base
 from app.db.session import engine
 from app.models import entities  # noqa: F401
 from app.services.flights import seed_demo_flights
 from app.services.users import seed_demo_users
 from app.services.workbench import seed_demo_workbench
+from sqlalchemy import text
 
 
 def initialize_database(retries: int = 10, delay_seconds: float = 2.0) -> None:

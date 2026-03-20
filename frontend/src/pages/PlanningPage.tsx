@@ -23,10 +23,11 @@ import {
   Timeline,
   Typography,
   message,
+  Upload,
 } from "antd";
 import type { DefaultOptionType } from "antd/es/select";
 import type { ColumnsType, ColumnType } from "antd/es/table";
-import { CopyOutlined, DragOutlined, PlusOutlined, RobotOutlined, FileTextOutlined } from "@ant-design/icons";
+import { CopyOutlined, DragOutlined, PlusOutlined, RobotOutlined, FileTextOutlined, UploadOutlined } from "@ant-design/icons";
 
 import {
 
@@ -34,6 +35,7 @@ import {
   assignFlight,
   autoPlan,
   createViewProfile,
+  deleteWorkbenchRow,
   downloadWorkbenchRowsCsv,
   fetchAirports,
   fetchFlights,
@@ -44,6 +46,9 @@ import {
   mergeRows,
   seedWorkbench,
   splitRow,
+  createManualOrder,
+  updateWorkbenchRow,
+  importWorkbenchCsv,
   updateViewProfile,
   type Flight,
   type ChangeLogItem,
@@ -75,6 +80,7 @@ type TableColumnKey =
 type SplitFormValues = { split_places_count: number; awb_number?: string; planned_flight_number?: string; color_tag?: string; operator_comment?: string };
 type AssignAwbFormValues = { awb_number: string; route_from?: string; route_to?: string; temperature_mode?: string; comments?: string };
 type AssignFlightFormValues = { flight_number: string; carrier_code: string; airport_departure: string; airport_arrival: string; etd: string; eta?: string };
+type CreateOrderFormValues = { direction_code: string; airport_code: string; places_count: number; weight_total: number; volume_total: number; temperature_mode: string; box_type_summary?: string };
 type DateRangeValue = [Dayjs | null, Dayjs | null] | null;
 
 const defaultVisibleColumns: TableColumnKey[] = [
@@ -86,6 +92,11 @@ const tableColumnOptions = [
 const statusColor: Record<string, string> = { pending: "gold", draft: "default", confirmed: "green", partial: "orange", fixed: "blue", handed_over_partial: "orange", handed_over_full: "green", not_handed_over: "default", flown_partial: "orange", flown_full: "green", not_flown: "red", postponed: "volcano" };
 
 import { StatusTag, bookingLabels, executionLabels, handoverLabels } from "../uiUtils";
+import { useAuth } from "../auth/AuthContext";
+import { PlanningFilterModal } from "../components/planning/PlanningFilterModal";
+import { PlanningQueueList } from "../components/planning/PlanningQueueList";
+import { PlanningAwbGrid, AwbGroup } from "../components/planning/PlanningAwbGrid";
+import { PlanningDetailCard } from "../components/planning/PlanningDetailCard";
 
 const temperatureOptions = [
   { value: "+2..+8", label: "+2..+8 °C" },
@@ -133,7 +144,7 @@ function buildFilters(values: Record<string, unknown>): WorkbenchFilters {
 function filtersToFormValues(filters: WorkbenchFilters) {
   return { ...filters, workbench_date_range: filters.workbench_date_from || filters.workbench_date_to ? [filters.workbench_date_from ? dayjs(filters.workbench_date_from) : null, filters.workbench_date_to ? dayjs(filters.workbench_date_to) : null] : filters.workbench_date ? [dayjs(filters.workbench_date), dayjs(filters.workbench_date)] : undefined };
 }
-function groupRowsByAwb(rows: WorkbenchRow[]) {
+function groupRowsByAwb(rows: WorkbenchRow[]): AwbGroup[] {
   const map = new Map<string, WorkbenchRow[]>();
   rows.filter((r) => r.awb_number).forEach((row) => { const key = row.awb_number ?? "UNASSIGNED"; const bucket = map.get(key) ?? []; bucket.push(row); map.set(key, bucket); });
   return Array.from(map.entries()).map(([awbNumber, items]) => ({ awbNumber, items: items.sort((a,b) => a.custom_sort_order - b.custom_sort_order || a.id - b.id), totalPlaces: items.reduce((s,i) => s + i.places_count, 0), totalWeight: items.reduce((s,i) => s + i.weight_total, 0), totalVolume: items.reduce((s,i) => s + i.volume_total, 0), flight: items[0]?.planned_flight_number ?? null, bookingStatus: items[0]?.booking_status ?? "pending", handoverStatus: items[0]?.handover_status ?? "not_handed_over", executionStatus: items[0]?.execution_status ?? "pending" })).sort((a,b) => a.awbNumber.localeCompare(b.awbNumber));
@@ -159,6 +170,7 @@ function getTableColumn(key: TableColumnKey): ColumnType<WorkbenchRow> {
 }
 
 export function PlanningPage() {
+  const { user } = useAuth();
   const [rows, setRows] = useState<WorkbenchRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [apiBusy, setApiBusy] = useState(false);
@@ -183,11 +195,15 @@ export function PlanningPage() {
   const [flightOpen, setFlightOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [fixOpen, setFixOpen] = useState(false);
+  const [createOrderOpen, setCreateOrderOpen] = useState(false);
+  const [editRowOpen, setEditRowOpen] = useState(false);
   const [filterModalOpen, setFilterModalOpen] = useState(false);
 
   const [splitForm] = Form.useForm<SplitFormValues>();
   const [awbForm] = Form.useForm<AssignAwbFormValues>();
   const [flightForm] = Form.useForm<AssignFlightFormValues>();
+  const [createOrderForm] = Form.useForm<CreateOrderFormValues>();
+  const [editRowForm] = Form.useForm<{ places_count: number; weight_total: number; volume_total: number }>();
   const [filterForm] = Form.useForm();
 
   const selectedRows = useMemo(() => rows.filter((row) => selectedRowIds.includes(row.id)), [rows, selectedRowIds]);
@@ -306,6 +322,21 @@ export function PlanningPage() {
     }
   }
 
+  async function handleEditRow(values: { places_count: number; weight_total: number; volume_total: number }) {
+    if (!activeRow) return;
+    setApiBusy(true);
+    try {
+      await updateWorkbenchRow(activeRow.id, values);
+      message.success("Параметры заказа обновлены");
+      setEditRowOpen(false);
+      void loadRows();
+    } catch (e: any) {
+      message.error(e.message || "Ошибка при обновлении параметров");
+    } finally {
+      setApiBusy(false);
+    }
+  }
+
   async function handleAutoPlan() {
     setApiBusy(true);
     try {
@@ -376,6 +407,33 @@ export function PlanningPage() {
     catch (error) { message.error(error instanceof Error ? error.message : "Не удалось зафиксировать план"); }
     finally { setApiBusy(false); }
   }
+  async function handleCreateOrder(values: CreateOrderFormValues) {
+    setApiBusy(true);
+    try {
+      await createManualOrder(values);
+      setCreateOrderOpen(false);
+      createOrderForm.resetFields();
+      await loadRows(filters);
+      message.success("Новый заказ создан");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "Не удалось создать заказ");
+    } finally { setApiBusy(false); }
+  }
+
+  async function handleImportCsv(file: File) {
+    setApiBusy(true);
+    message.loading({ content: 'Импорт реестра...', key: 'import_csv' });
+    try {
+      const res = await importWorkbenchCsv(file);
+      message.success({ content: res.message || "Импорт завершен", key: 'import_csv', duration: 3 });
+      await loadRows(filters);
+    } catch (err: any) {
+      message.error({ content: err.message || "Ошибка импорта CSV", key: 'import_csv', duration: 5 });
+    } finally {
+      setApiBusy(false);
+    }
+    return false; // Prevent default upload behavior
+  }
 
   function handleRowDragStart(row: WorkbenchRow) {
     setDraggedRowId(row.id);
@@ -386,10 +444,22 @@ export function PlanningPage() {
     setDragOverAwb(null);
   }
 
-  function handleSelectRow(row: WorkbenchRow) {
+  const handleSelectRow = (row: WorkbenchRow) => {
     setActiveRow(row);
     setSelectedAwbNumber(row.awb_number ?? null);
-  }
+  };
+
+  const handleDeleteRow = async (rowId: number) => {
+    try {
+      setApiBusy(true);
+      await deleteWorkbenchRow(rowId);
+      void loadRows(filters);
+    } catch (e: any) {
+      message.error({ content: e.message || "Ошибка при удалении", key: "del_order" });
+    } finally {
+      setApiBusy(false);
+    }
+  };
 
   async function handleDropOnAwb(groupAwbNumber: string) {
     const rowId = draggedRowId;
@@ -460,25 +530,32 @@ export function PlanningPage() {
                   Фильтры {activeFilterTags.length ? `(${activeFilterTags.length})` : ""}
                 </Button>
                 <Segmented value={viewMode} onChange={(value) => setViewMode(value as ViewMode)} options={[{ label: "Канбан", value: "kanban" }, { label: "Таблица (Excel)", value: "table" }]} />
+                <Button type="primary" style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }} onClick={() => setCreateOrderOpen(true)} icon={<PlusOutlined />}>
+                  Новый заказ
+                </Button>
                 <Button type="primary" onClick={() => setAwbOpen(true)} disabled={!activeRow}>
                   + Новая AWB
                 </Button>
                 <Button icon={<CopyOutlined />} onClick={handleDownloadCsv} loading={apiBusy}>
-                  Скачать CSV
+                  Скачать таблицу
                 </Button>
+                <Upload beforeUpload={handleImportCsv} showUploadList={false} accept=".csv">
+                  <Button icon={<UploadOutlined />} loading={apiBusy} style={{ borderColor: '#1890ff', color: '#1890ff' }}>
+                    Импорт реестра (CSV)
+                  </Button>
+                </Upload>
                 <Button 
-                  icon={<FileTextOutlined />} 
                   onClick={() => {
-                    message.loading({ content: 'Импорт заказов из Excel...', key: 'excel' });
-                    setTimeout(() => {
-                        message.success({ content: 'Заказы успешно импортированы!', key: 'excel', duration: 2 });
-                        handleSeedWorkbench();
-                    }, 1200);
+                    const csvContent = "Направление;Аэропорт;Места;Вес;Объем;Температура;Груз;Тара;Клиент\nSVO-VVO;VVO;12;125.5;1.2;+2..+8;Pharma;Термобокс 50L x12;BIOCAD";
+                    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: "text/csv;charset=utf-8" });
+                    const link = document.createElement("a");
+                    link.href = URL.createObjectURL(blob);
+                    link.download = "template.csv";
+                    link.click();
                   }}
-                  loading={apiBusy}
-                  style={{ borderColor: '#52c41a', color: '#52c41a' }}
+                  type="link"
                 >
-                  Загрузить заказы из Excel
+                  Шаблон CSV
                 </Button>
               </Space>
             </Col>
@@ -520,42 +597,23 @@ export function PlanningPage() {
             </Col>
           </Row>
 
-          <Modal title="Настройка фильтров" open={filterModalOpen} onCancel={() => setFilterModalOpen(false)} footer={null} width={1000}>
-            <Form form={filterForm} layout="vertical" onFinish={handleApplyFilters} initialValues={filtersToFormValues({})}>
-              <Row gutter={[16, 12]} align="stretch">
-                <Col xs={24} xl={15}>
-                  <Card size="small" className="filter-section-card" title="Основные фильтры" bordered={false}>
-                    <Row gutter={[12, 10]}>
-                      <Col xs={24} md={12} xl={8}><Form.Item name="search" label="Поиск"><Input allowClear placeholder="AWB, рейс, заказ, комментарий" /></Form.Item></Col>
-                      <Col xs={24} md={12} xl={8}><Form.Item name="airport_code" label="Аэропорт"><Select showSearch allowClear loading={airportLoading} placeholder="Все аэропорты" options={airportOptions} optionFilterProp="label" /></Form.Item></Col>
-                      <Col xs={24} md={12} xl={8}><Form.Item name="direction_code" label="Направление"><Select showSearch allowClear placeholder="Все направления" options={directionOptions} optionFilterProp="label" /></Form.Item></Col>
-                      <Col xs={24} md={12} xl={8}><Form.Item name="temperature_mode" label="Температура"><Select allowClear placeholder="Все режимы" options={options.temperature} /></Form.Item></Col>
-                      <Col xs={24} md={12} xl={8}><Form.Item name="workbench_date_range" label="Период вылета"><RangePicker style={{ width: "100%" }} /></Form.Item></Col>
-                    </Row>
-                  </Card>
-                </Col>
-                <Col xs={24} xl={9}>
-                  <Card size="small" className="filter-section-card" title="Статусы и признаки" bordered={false}>
-                    <Row gutter={[12, 10]}>
-                      <Col xs={24} md={8} xl={12}><Form.Item name="booking_status" label="Бронь"><Select allowClear placeholder="Все" options={options.booking.map((value) => ({ label: bookingLabels[value] ?? value, value }))} /></Form.Item></Col>
-                      <Col xs={24} md={8} xl={12}><Form.Item name="handover_status" label="Сдача"><Select allowClear placeholder="Все" options={options.handover.map((value) => ({ label: handoverLabels[value] ?? value, value }))} /></Form.Item></Col>
-                      <Col xs={24} md={8} xl={12}><Form.Item name="execution_status" label="Вылет"><Select allowClear placeholder="Все" options={options.execution.map((value) => ({ label: executionLabels[value] ?? value, value }))} /></Form.Item></Col>
-                      <Col xs={24} md={8} xl={12}><Form.Item name="color_tag" label="Цвет"><Select allowClear placeholder="Все" options={options.color.map((value) => ({ label: value, value }))} /></Form.Item></Col>
-                      <Col xs={24} md={8} xl={12}><Form.Item name="has_awb" label="С AWB"><Select allowClear placeholder="Все" options={[{ label: "Да", value: true }, { label: "Нет", value: false }]} /></Form.Item></Col>
-                      <Col xs={24} md={8} xl={12}><Form.Item name="has_flight" label="С рейсом"><Select allowClear placeholder="Все" options={[{ label: "Да", value: true }, { label: "Нет", value: false }]} /></Form.Item></Col>
-                      <Col xs={24} md={12} xl={24}><Form.Item name="is_outside_final_manifest" label="Вне манифеста"><Select allowClear placeholder="Все" options={[{ label: "Да", value: true }, { label: "Нет", value: false }]} /></Form.Item></Col>
-                    </Row>
-                  </Card>
-                </Col>
-              </Row>
-              <div style={{ marginTop: 24, display: "flex", justifyContent: "flex-end", gap: 8 }} className="filter-actions">
-                <Button onClick={handleSeedWorkbench} loading={apiBusy} style={{ marginRight: 'auto' }}>Загрузить демо-данные</Button>
-                <Button onClick={handleResetFilters}>Сбросить всё</Button>
-                <Button onClick={() => setFilterModalOpen(false)}>Отмена</Button>
-                <Button type="primary" htmlType="submit">Применить</Button>
-              </div>
-            </Form>
-          </Modal>
+          <PlanningFilterModal
+            open={filterModalOpen}
+            onCancel={() => setFilterModalOpen(false)}
+            form={filterForm}
+            onApply={handleApplyFilters}
+            initialValues={filtersToFormValues({})}
+            airportLoading={airportLoading}
+            airportOptions={airportOptions}
+            directionOptions={directionOptions}
+            options={options}
+            bookingLabels={bookingLabels}
+            handoverLabels={handoverLabels}
+            executionLabels={executionLabels}
+            apiBusy={apiBusy}
+            onSeedWorkbench={handleSeedWorkbench}
+            onResetFilters={handleResetFilters}
+          />
 
           <Space wrap className="active-filter-strip">
             <Typography.Text className="active-filter-label">Активные фильтры:</Typography.Text>
@@ -581,274 +639,59 @@ export function PlanningPage() {
         <Card bordered={false} className="metric-card"><Empty description="Манифест пуст. Можно загрузить демо-данные или подключить 1C TMS." /></Card>
       ) : viewMode === "kanban" ? (
         <div className="planning-grid">
-          <Card
-            className="planning-column planning-column-left"
-            title={<Space direction="vertical" size={0}><Typography.Text strong>1. Рабочий манифест</Typography.Text><Typography.Text type="secondary">Очередь заявок без назначенной AWB</Typography.Text></Space>}
-            extra={<Badge count={queueRows.length} overflowCount={999} />}
-          >
-            <div className="queue-list">
-              {queueRows.map((row) => {
-                const isActive = activeRow?.id === row.id;
-                return (
-                  <Card
-                    key={row.id}
-                    size="small"
-                    className={`queue-row-card ${isActive ? "queue-row-card-active" : ""} ${draggedRowId === row.id ? "queue-row-card-dragging" : ""}`}
-                    onClick={() => handleSelectRow(row)}
-                    draggable
-                    onDragStart={() => handleRowDragStart(row)}
-                    onDragEnd={handleRowDragEnd}
-                  >
-                    <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                      <Space style={{ width: "100%", justifyContent: "space-between" }} align="start">
-                        <Space direction="vertical" size={2}>
-                          <Typography.Text strong>#{row.id} · {row.direction_code}</Typography.Text>
-                          <Typography.Text type="secondary" style={{ fontSize: '12px' }}>{row.direction_name} ({row.airport_code})</Typography.Text>
-                        </Space>
-                        <Tag color={row.color_tag ?? "blue"}>{row.color_tag ?? "без цвета"}</Tag>
-                      </Space>
+          <PlanningQueueList
+            queueRows={queueRows}
+            activeRowId={activeRow?.id}
+            draggedRowId={draggedRowId}
+            onSelectRow={(row) => {
+              setActiveRow(row);
+              setSelectedAwbNumber(row.awb_number ?? null);
+            }}
+            onRowDragStart={(row) => setDraggedRowId(row.id)}
+            onRowDragEnd={() => setDraggedRowId(null)}
+            onSplitRow={(row) => {
+              setActiveRow(row);
+              setSplitOpen(true);
+            }}
+            userRole={user?.role}
+            onDeleteRow={handleDeleteRow}
+          />
 
-                      <Typography.Text strong style={{ display: 'block' }}>
-                        👤 {row.client_name ?? "BIOCARD Client"}
-                      </Typography.Text>
+          <PlanningAwbGrid
+            awbGroups={awbGroups}
+            activeAwbGroup={activeAwbGroup}
+            dragOverAwb={dragOverAwb}
+            selectedAwbNumber={selectedAwbNumber}
+            draggedRowId={draggedRowId}
+            onSelectAwb={(awbNumber, firstRow) => {
+              setSelectedAwbNumber(awbNumber);
+              setActiveRow(firstRow);
+            }}
+            onDragOverAwb={(awbNumber) => setDragOverAwb(awbNumber)}
+            onDragLeaveAwb={() => setDragOverAwb(null)}
+            onDropOnAwb={(awbNumber) => void handleDropOnAwb(awbNumber)}
+          />
 
-                      <Space wrap className="queue-metrics">
-                        <Tag color="blue">{row.places_count} мест</Tag>
-                        <Tag>Физ: {fmt(row.weight_total)} кг</Tag>
-                        <Tag>vW: {fmt((row.volume_total || 0) * 167)} кг</Tag>
-                        <Tag>{temperatureLabel(row.temperature_mode)}</Tag>
-                        {row.box_type_summary ? <Tag>{row.box_type_summary}</Tag> : null}
-                      </Space>
-                      
-                      <Typography.Text type="secondary" style={{ display: 'block' }}>
-                        AWB: {row.awb_number ?? "—"} · Рейс: {row.planned_flight_number ?? "—"}
-                      </Typography.Text>
-                      {row.linked_order_ids.length ? <Typography.Text type="secondary" style={{ fontSize: '12px', display: 'block' }}>Заказы: {row.linked_order_ids.join(", ")}</Typography.Text> : null}
-
-                      <Space style={{ width: "100%", justifyContent: "space-between", marginTop: 2 }} align="center">
-                        <Space wrap size={6}>
-                          <Tag color={row.is_outside_final_manifest ? "red" : "green"}>{row.is_outside_final_manifest ? "Вне манифеста" : "В манифесте"}</Tag>
-                          {row.owner_user_id ? <Tag>Владелец {row.owner_user_id}</Tag> : null}
-                        </Space>
-                        <Button
-                          type="link"
-                          size="small"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setActiveRow(row);
-                            setSplitOpen(true);
-                          }}
-                        >
-                          Разделить
-                        </Button>
-                      </Space>
-                    </Space>
-                  </Card>
-                );
-              })}
-            </div>
-          </Card>
-
-            <Card
-            className="planning-column planning-column-center"
-            title="2. Авианакладные (Сборка и Бронь)"
-            extra={
-            <Space wrap>
-              <Badge count={awbGroups.length} overflowCount={999} />
-              <Typography.Text type="secondary">Одна температура = одна AWB</Typography.Text>
-            </Space>
-          }
-          >
-            <Space wrap className="center-panel-summary">
-              <Tag color="blue">{activeAwbGroup ? `Выбрана AWB ${activeAwbGroup.awbNumber}` : "AWB не выбрана"}</Tag>
-              {activeAwbGroup ? <StatusTag status={activeAwbGroup.bookingStatus} type="booking" /> : <Tag>Нажмите на AWB-карточку</Tag>}
-              {activeAwbGroup ? <Tag>{activeAwbGroup.items.length} строк</Tag> : null}
-            </Space>
-            <Row gutter={[16, 16]}>
-              {awbGroups.map((group) => (
-                <Col xs={24} xl={12} key={group.awbNumber}>
-                  <Card
-                    className={`awb-card awb-card-${group.bookingStatus} ${dragOverAwb === group.awbNumber ? "awb-card-drop-over" : ""} ${selectedAwbNumber === group.awbNumber ? "awb-card-selected" : ""}`}
-                    title={<Space align="center" wrap><Typography.Text strong>AWB {group.awbNumber}</Typography.Text><StatusTag status={group.bookingStatus} type="booking" /></Space>}
-                    extra={<Button type="text">✎</Button>}
-                    onClick={() => {
-                      setSelectedAwbNumber(group.awbNumber);
-                      setActiveRow(group.items[0] ?? null);
-                    }}
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      if (draggedRowId) {
-                        setDragOverAwb(group.awbNumber);
-                      }
-                    }}
-                    onDragLeave={() => {
-                      if (dragOverAwb === group.awbNumber) {
-                        setDragOverAwb(null);
-                      }
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      void handleDropOnAwb(group.awbNumber);
-                    }}
-                  >
-                    <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-                      <Row gutter={12}>
-                        <Col span={12}><Typography.Text type="secondary">Рейс</Typography.Text><div className="awb-value">{group.flight ?? "—"}</div></Col>
-                        <Col span={12}><Typography.Text type="secondary">Режим</Typography.Text><div className="awb-value">{temperatureLabel(group.items[0]?.temperature_mode ?? null)}</div></Col>
-                      </Row>
-                      <Row gutter={12}>
-                        <Col span={12}><Typography.Text type="secondary">Итог</Typography.Text><div className="awb-value">{placesText(group.totalPlaces, group.totalWeight)}</div></Col>
-                        <Col span={12}><Typography.Text type="secondary">Объем</Typography.Text><div className="awb-value">{fmt(group.totalVolume)} м³</div></Col>
-                      </Row>
-                      <div className="awb-dropzone">Перетащите заявку сюда</div>
-                      <Space wrap>
-                        <Tag color="purple">{group.items.length} строк</Tag>
-                        <StatusTag status={group.handoverStatus} type="handover" />
-                        <StatusTag status={group.executionStatus} type="execution" />
-                      </Space>
-                      <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                        <Typography.Text type="secondary">Маршрут не задан</Typography.Text>
-                        <Button type="link" danger>Расформировать</Button>
-                      </Space>
-                    </Space>
-                  </Card>
-                </Col>
-              ))}
-            </Row>
-          </Card>
-
-          <Card
-            className="planning-column planning-column-right"
-            title="3. Карточка строки"
-            extra={<Space wrap><Tag color={statusColor[selectedStatus] ?? "blue"}>{selectedStatus}</Tag>{activeAwbGroup ? <Tag color="blue">AWB {activeAwbGroup.awbNumber}</Tag> : <Tag>AWB не выбрана</Tag>}</Space>}
-          >
-            {activeRow ? <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-              <Card size="small" className="detail-card detail-card-primary" title="Детализация заявки (Drill-down)">
-                <div className="detail-kicker">#{activeRow.id} · {activeRow.airport_code}</div>
-                <Typography.Title level={4} style={{ margin: "4px 0 16px" }}>
-                  {activeRow.direction_code}
-                </Typography.Title>
-                <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>{activeRow.direction_name}</Typography.Text>
-                
-                <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-                  <Col span={24}>
-                     <Typography.Text type="secondary">Клиент: </Typography.Text>
-                     <Typography.Text strong>{activeRow.client_name ?? "BIOCARD Client"}</Typography.Text>
-                  </Col>
-                </Row>
-
-                <div className="detail-metrics" style={{ marginBottom: 16 }}>
-                  <Space wrap size="large">
-                    <div>
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>Места</Typography.Text>
-                      <div style={{ fontWeight: 600, fontSize: 16 }}>{activeRow.places_count} шт</div>
-                    </div>
-                    <div>
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>Физ. вес</Typography.Text>
-                      <div style={{ fontWeight: 600, fontSize: 16 }}>{fmt(activeRow.weight_total)} кг</div>
-                    </div>
-                    <div>
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>Объемный вес (vW)</Typography.Text>
-                      <div style={{ fontWeight: 600, fontSize: 16, color: '#1890ff' }}>{fmt((activeRow.volume_total || 0) * 167)} кг</div>
-                    </div>
-                    <div>
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>Объем</Typography.Text>
-                      <div style={{ fontWeight: 600, fontSize: 16 }}>{fmt(activeRow.volume_total)} м³</div>
-                    </div>
-                  </Space>
-                </div>
-                
-                <Space wrap style={{ marginBottom: 16 }}>
-                  <Tag>{temperatureLabel(activeRow.temperature_mode)}</Tag>
-                  {activeRow.box_type_summary ? <Tag>{activeRow.box_type_summary}</Tag> : null}
-                </Space>
-
-                <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
-                  AWB: <strong style={{color: '#000'}}>{activeRow.awb_number ?? "Не назначена"}</strong> · Рейс: <strong style={{color: '#000'}}>{activeRow.planned_flight_number ?? "Не назначен"}</strong>
-                </Typography.Text>
-              </Card>
-
-              <Card size="small" className={`detail-card ${activeAwbGroup ? "detail-card-primary" : ""}`} title="Выбранная AWB (Сводка)">
-                {activeAwbGroup ? (
-                  <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                    <Space wrap>
-                      <Tag color="blue">AWB {activeAwbGroup.awbNumber}</Tag>
-                      <StatusTag status={activeAwbGroup.bookingStatus} type="booking" />
-                      <Tag>{activeAwbGroup.items.length} строк</Tag>
-                    </Space>
-                      <Row gutter={[8, 8]}>
-                      <Col span={12}><Typography.Text type="secondary">Рейс</Typography.Text><div className="awb-value">{activeAwbGroup.flight ?? "—"}</div></Col>
-                      <Col span={12}><Typography.Text type="secondary">Температура</Typography.Text><div className="awb-value">{temperatureLabel(activeAwbGroup.items[0]?.temperature_mode ?? null)}</div></Col>
-                      <Col span={12}><Typography.Text type="secondary">Сводные места</Typography.Text><div className="awb-value">{activeAwbGroup.totalPlaces}</div></Col>
-                      <Col span={12}><Typography.Text type="secondary">Объемный вес (vW)</Typography.Text><div className="awb-value" style={{color: '#1890ff'}}>{fmt((activeAwbGroup.totalVolume || 0) * 167)} кг</div></Col>
-                      <Col span={12}><Typography.Text type="secondary">Сводный физ. вес</Typography.Text><div className="awb-value">{fmt(activeAwbGroup.totalWeight)} кг</div></Col>
-                      <Col span={12}><Typography.Text type="secondary">Сводный объем</Typography.Text><div className="awb-value">{fmt(activeAwbGroup.totalVolume)} м³</div></Col>
-                    </Row>
-                  </Space>
-                ) : (
-                  <Typography.Text type="secondary">Выберите AWB-карточку в центре, чтобы увидеть сводку по сборке и броням.</Typography.Text>
-                )}
-              </Card>
-              <Card size="small" className="detail-card" title="Статусы логистики">
-                <Space wrap>
-                  <StatusTag status={activeRow.booking_status} type="booking" />
-                  <StatusTag status={activeRow.handover_status} type="handover" />
-                  <StatusTag status={activeRow.execution_status} type="execution" />
-                  {activeRow.color_tag ? <Tag color={activeRow.color_tag}>{activeRow.color_tag}</Tag> : null}
-                </Space>
-              </Card>
-              <Card size="small" className="detail-card" title="Связанные заказы \ Клиент">
-                <Space wrap>
-                  <Typography.Text strong>Заказы ({activeRow.linked_order_ids.length}):</Typography.Text>
-                  {activeRow.linked_order_ids.length ? activeRow.linked_order_ids.map((orderId) => <Tag key={orderId}>#{orderId}</Tag>) : <Typography.Text type="secondary">Связанных заказов нет</Typography.Text>}
-                </Space>
-              </Card>
-              <Card size="small" className="detail-card" title="Комментарий">
-                <Typography.Paragraph style={{ marginBottom: 0 }}>
-                  {activeRow.operator_comment ?? "Комментарий не заполнен"}
-                </Typography.Paragraph>
-                <Space wrap>
-                  {activeRow.is_outside_final_manifest ? <Tag color="red">Вне манифеста</Tag> : <Tag color="green">В манифесте</Tag>}
-                  {activeRow.owner_user_id ? <Tag color="blue">Владелец {activeRow.owner_user_id}</Tag> : null}
-                </Space>
-              </Card>
-              <Card size="small" className="detail-card" title="Действия">
-                <Space direction="vertical" style={{ width: "100%" }}>
-                  <Button block onClick={() => setAwbOpen(true)}>
-                    Создать AWB
-                  </Button>
-                  <Button block onClick={() => setSplitOpen(true)} disabled={!activeRow}>
-                    Разделить
-                  </Button>
-                  <Button block onClick={() => setFlightOpen(true)} disabled={!activeRow}>
-                    Назначить рейс
-                  </Button>
-                  <Button block onClick={() => setMergeOpen(true)} disabled={selectedRows.length < 2}>
-                    Объединить
-                  </Button>
-                  <Button block type="primary" onClick={() => setFixOpen(true)}>
-                    Зафиксировать план
-                  </Button>
-                </Space>
-              </Card>
-              <Card size="small" className="detail-card" title="Журнал изменений">
-                <Timeline
-                  items={
-                    changeLog.length
-                      ? changeLog.map((item) => ({
-                          children: (
-                            <Space direction="vertical" size={0}>
-                              <Typography.Text strong>{item.action_type}</Typography.Text>
-                              <Typography.Text type="secondary">{item.comment ?? "Без комментария"}</Typography.Text>
-                            </Space>
-                          ),
-                        }))
-                      : [{ children: <Typography.Text type="secondary">Изменений по этой строке пока нет.</Typography.Text> }]
-                  }
-                />
-              </Card>
-            </Space> : <Alert type="info" message="Выберите строку, чтобы увидеть карточку" />}
-          </Card>
+          <PlanningDetailCard
+            activeRow={activeRow}
+            activeAwbGroup={activeAwbGroup}
+            selectedStatus={selectedStatus}
+            selectedRows={selectedRows}
+            changeLog={changeLog}
+            onOpenAwb={() => setAwbOpen(true)}
+            onOpenSplit={() => setSplitOpen(true)}
+            onOpenFlight={() => setFlightOpen(true)}
+            onOpenMerge={() => setMergeOpen(true)}
+            onOpenFix={() => setFixOpen(true)}
+            onOpenEdit={() => {
+              editRowForm.setFieldsValue({
+                places_count: activeRow?.places_count,
+                weight_total: activeRow?.weight_total,
+                volume_total: activeRow?.volume_total,
+              });
+              setEditRowOpen(true);
+            }}
+          />
         </div>
       ) : (
         <Card title="Рабочий манифест" extra={<Space wrap><Tag color="blue">{rows.length} строк</Tag><Tag color="gold">{selectedRows.length} выбрано</Tag></Space>}>
@@ -919,6 +762,30 @@ export function PlanningPage() {
 
       <Modal title="Объединить выбранные строки" open={mergeOpen} onCancel={() => setMergeOpen(false)} onOk={handleMerge} okText="Объединить" confirmLoading={apiBusy}><Typography.Paragraph>Выбрано {selectedRows.length} строк. Первая выбранная строка станет целевой.</Typography.Paragraph></Modal>
       <Modal title="Зафиксировать план" open={fixOpen} onCancel={() => setFixOpen(false)} onOk={handleFixPlan} okText="Зафиксировать" confirmLoading={apiBusy}><Typography.Paragraph>Если выбраны строки, фиксация применится к ним. Иначе будет зафиксирован текущий рабочий манифест.</Typography.Paragraph></Modal>
+      
+      <Modal title="Редактировать места и вес (Admin)" open={editRowOpen} onCancel={() => setEditRowOpen(false)} footer={null}>
+        <Form form={editRowForm} layout="vertical" onFinish={handleEditRow}>
+          <Form.Item name="places_count" label="Количество мест" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item>
+          <Form.Item name="weight_total" label="Физ. вес (кг)" rules={[{ required: true }]}><InputNumber min={0.1} step={0.1} style={{ width: "100%" }} /></Form.Item>
+          <Form.Item name="volume_total" label="Объем (м³)" rules={[{ required: true }]}><InputNumber min={0.01} step={0.01} style={{ width: "100%" }} /></Form.Item>
+          <Space><Button onClick={() => setEditRowOpen(false)}>Отмена</Button><Button type="primary" htmlType="submit" loading={apiBusy}>Сохранить изменения</Button></Space>
+        </Form>
+      </Modal>
+
+      <Modal title="Новый ручной заказ" open={createOrderOpen} onCancel={() => setCreateOrderOpen(false)} footer={null}>
+        <Form form={createOrderForm} layout="vertical" onFinish={handleCreateOrder} initialValues={{ places_count: 1, weight_total: 10, volume_total: 0.1, temperature_mode: "+15..+25" }}>
+          <Form.Item name="direction_code" label="Направление" rules={[{ required: true, message: "Укажите направление" }]}><Input placeholder="SVO-KHV" /></Form.Item>
+          <Form.Item name="airport_code" label="Аэропорт назначения" rules={[{ required: true, message: "Укажите аэропорт" }]}><Input placeholder="KHV" /></Form.Item>
+          <Row gutter={16}>
+             <Col span={8}><Form.Item name="places_count" label="Мест" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col>
+             <Col span={8}><Form.Item name="weight_total" label="Вес (кг)" rules={[{ required: true }]}><InputNumber min={0.1} step={0.1} style={{ width: "100%" }} /></Form.Item></Col>
+             <Col span={8}><Form.Item name="volume_total" label="Объем (м³)" rules={[{ required: true }]}><InputNumber min={0.01} step={0.01} style={{ width: "100%" }} /></Form.Item></Col>
+          </Row>
+          <Form.Item name="temperature_mode" label="Температурный режим" rules={[{ required: true, message: "Выберите температурный режим" }]}><Select options={options.temperature} /></Form.Item>
+          <Form.Item name="box_type_summary" label="Тип упаковки (опционально)"><Input placeholder="2 x Термобокс 50L" /></Form.Item>
+          <Space><Button onClick={() => setCreateOrderOpen(false)}>Отмена</Button><Button type="primary" htmlType="submit" loading={apiBusy}>Создать заказ</Button></Space>
+        </Form>
+      </Modal>
     </Space>
   );
 }

@@ -8,6 +8,7 @@ from app.services.tms_client import tms_client
 
 logger = logging.getLogger(__name__)
 
+
 @celery_app.task(name="app.tasks.tms_sync.sync_orders_from_tms")
 def sync_orders_from_tms() -> dict:
     """
@@ -15,15 +16,15 @@ def sync_orders_from_tms() -> dict:
     Parses OData objects into canonical representations securely.
     """
     logger.info("Starting periodic sync of orders from 1C TMS")
-    
+
     db = SessionLocal()
     processed_count = 0
     new_rows_count = 0
-    
+
     try:
         # Fetch the payloads (will fall back to mock payloads if unreachable)
         incoming_orders = tms_client.fetch_recent_orders()
-        
+
         for p in incoming_orders:
             # Upsert into Orders table
             order = db.query(Order).filter(Order.external_id_1c == p.id_1c).first()
@@ -41,11 +42,11 @@ def sync_orders_from_tms() -> dict:
                     weight=p.weight,
                     volume=p.volume,
                     places_planned=p.places,
-                    status=p.status
+                    status=p.status,
                 )
                 db.add(order)
-                db.flush() # flush to get order.id
-                
+                db.flush()  # flush to get order.id
+
                 # Automatically map new logical orders to the active Planning Workbench
                 row = PlanningWorkbenchRow(
                     workbench_date=p.delivery_date or datetime.now(timezone.utc),
@@ -68,17 +69,23 @@ def sync_orders_from_tms() -> dict:
                 order.volume = p.volume
                 order.places_planned = p.places
                 order.status = p.status
-            
+
             processed_count += 1
-            
+
         db.commit()
-        logger.info(f"Successfully processed {processed_count} orders. Generated {new_rows_count} new workbench items.")
-        
+        logger.info(
+            f"Successfully processed {processed_count} orders. Generated {new_rows_count} new workbench items."
+        )
+
     except Exception as exc:
         logger.error(f"Failed to sync with 1C TMS: {exc}")
         db.rollback()
         raise exc
     finally:
         db.close()
-        
-    return {"status": "success", "processed_orders": processed_count, "new_rows": new_rows_count}
+
+    return {
+        "status": "success",
+        "processed_orders": processed_count,
+        "new_rows": new_rows_count,
+    }

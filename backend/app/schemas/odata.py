@@ -1,5 +1,7 @@
 from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
+
 
 class ODataOrderPayload(BaseModel):
     id_1c: str = Field(alias="Ref_Key")
@@ -19,6 +21,7 @@ class ODataOrderPayload(BaseModel):
     delivery_date: datetime | None = Field(alias="DeliveryDate", default=None)
 
     model_config = ConfigDict(populate_by_name=True)
+
 
 class ODataResponse(BaseModel):
     value: list[ODataOrderPayload]

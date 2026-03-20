@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy.orm import Session
-
 from app.core.security import hash_password, verify_password
 from app.models.entities import User
 from app.schemas.user import UserCreate, UserUpdate
+from sqlalchemy.orm import Session
 
 DEMO_USERS = [
     UserCreate(
@@ -49,7 +48,11 @@ DEMO_USERS = [
 
 
 def list_users(db: Session) -> list[User]:
-    return db.query(User).order_by(User.is_superuser.desc(), User.role.asc(), User.username.asc()).all()
+    return (
+        db.query(User)
+        .order_by(User.is_superuser.desc(), User.role.asc(), User.username.asc())
+        .all()
+    )
 
 
 def get_user_by_username(db: Session, username: str) -> User | None:

@@ -22,4 +22,3 @@ class ExecutionStatus(str, Enum):
     flown_partial = "flown_partial"
     not_flown = "not_flown"
     postponed = "postponed"
-

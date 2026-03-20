@@ -26,8 +26,8 @@ export function LoginPage() {
   };
 
   return (
-    <div className="login-page">
-      <Card className="login-card" bordered={false}>
+    <div className="login-page" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: 'var(--bg-base)' }}>
+      <Card className="login-card" bordered={false} style={{ width: '100%', maxWidth: 480, boxShadow: 'var(--shadow-xl)', borderRadius: 16 }}>
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
           <Space direction="vertical" size={6} style={{ width: "100%" }}>
             <div style={{ marginBottom: "16px" }}>

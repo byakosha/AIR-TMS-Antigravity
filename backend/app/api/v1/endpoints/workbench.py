@@ -1,37 +1,25 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from app.core.security import get_current_user
+from app.db.session import get_db
+from app.models.entities import PlanningWorkbenchRow, User
+from app.models.planning_rules import (AirlineDetails, AwbBlankRange,
+                                       SupplyChainRule)
+from app.schemas.changelog import ChangeLogRead
+from app.schemas.workbench import (AssignAwbRequest, AssignFlightRequest,
+                                   CreateManualOrderRequest, FixPlanRequest,
+                                   MergeWorkbenchRowsRequest, OperationResult,
+                                   SplitWorkbenchRowRequest, WorkbenchFilters,
+                                   WorkbenchRowRead)
+from app.services.workbench import (assign_awb_to_row, assign_flight_to_row,
+                                    build_workbench_query, create_manual_order,
+                                    export_workbench_rows_csv, fix_plan,
+                                    get_entity_changelog, merge_workbench_rows,
+                                    row_snapshot, seed_demo_workbench,
+                                    split_workbench_row)
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-
-from app.db.session import get_db
-from app.models.entities import PlanningWorkbenchRow
-from app.schemas.workbench import (
-    AssignAwbRequest,
-    AssignFlightRequest,
-    FixPlanRequest,
-    MergeWorkbenchRowsRequest,
-    OperationResult,
-    SplitWorkbenchRowRequest,
-    WorkbenchFilters,
-    WorkbenchRowRead,
-)
-from app.models.entities import PlanningWorkbenchRow, User
-from app.models.planning_rules import AirlineDetails, AwbBlankRange, SupplyChainRule
-from app.core.security import get_current_user
-from app.schemas.changelog import ChangeLogRead
-from app.services.workbench import (
-    assign_awb_to_row,
-    assign_flight_to_row,
-    build_workbench_query,
-    fix_plan,
-    get_entity_changelog,
-    merge_workbench_rows,
-    row_snapshot,
-    seed_demo_workbench,
-    split_workbench_row,
-    export_workbench_rows_csv,
-)
 
 router = APIRouter()
 
@@ -39,7 +27,19 @@ router = APIRouter()
 @router.post("/seed", response_model=OperationResult)
 def seed_rows(db: Session = Depends(get_db)) -> OperationResult:
     created = seed_demo_workbench(db)
-    return OperationResult(status="ok", message=f"Seeded {created} demo workbench rows", affected_row_ids=[])
+    return OperationResult(
+        status="ok",
+        message=f"Seeded {created} demo workbench rows",
+        affected_row_ids=[],
+    )
+
+
+@router.post("/manual", response_model=WorkbenchRowRead)
+def create_order(
+    payload: CreateManualOrderRequest, db: Session = Depends(get_db)
+) -> PlanningWorkbenchRow:
+    row = create_manual_order(db, payload.model_dump())
+    return row
 
 
 @router.get("", response_model=list[WorkbenchRowRead])
@@ -124,7 +124,9 @@ def export_workbench_rows(
 
 
 @router.post("/{row_id}/split", response_model=list[WorkbenchRowRead])
-def split_row(row_id: int, payload: SplitWorkbenchRowRequest, db: Session = Depends(get_db)) -> list[PlanningWorkbenchRow]:
+def split_row(
+    row_id: int, payload: SplitWorkbenchRowRequest, db: Session = Depends(get_db)
+) -> list[PlanningWorkbenchRow]:
     row = db.get(PlanningWorkbenchRow, row_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Workbench row not found")
@@ -138,8 +140,14 @@ def split_row(row_id: int, payload: SplitWorkbenchRowRequest, db: Session = Depe
 
 
 @router.post("/merge", response_model=WorkbenchRowRead)
-def merge_rows(payload: MergeWorkbenchRowsRequest, db: Session = Depends(get_db)) -> PlanningWorkbenchRow:
-    rows = db.query(PlanningWorkbenchRow).filter(PlanningWorkbenchRow.id.in_(payload.row_ids)).all()
+def merge_rows(
+    payload: MergeWorkbenchRowsRequest, db: Session = Depends(get_db)
+) -> PlanningWorkbenchRow:
+    rows = (
+        db.query(PlanningWorkbenchRow)
+        .filter(PlanningWorkbenchRow.id.in_(payload.row_ids))
+        .all()
+    )
     if not rows:
         raise HTTPException(status_code=404, detail="No rows found")
     if payload.target_row_id is not None:
@@ -154,7 +162,9 @@ def merge_rows(payload: MergeWorkbenchRowsRequest, db: Session = Depends(get_db)
 
 
 @router.post("/{row_id}/assign-awb", response_model=WorkbenchRowRead)
-def assign_awb(row_id: int, payload: AssignAwbRequest, db: Session = Depends(get_db)) -> PlanningWorkbenchRow:
+def assign_awb(
+    row_id: int, payload: AssignAwbRequest, db: Session = Depends(get_db)
+) -> PlanningWorkbenchRow:
     row = db.get(PlanningWorkbenchRow, row_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Workbench row not found")
@@ -165,7 +175,9 @@ def assign_awb(row_id: int, payload: AssignAwbRequest, db: Session = Depends(get
 
 
 @router.post("/{row_id}/assign-flight", response_model=WorkbenchRowRead)
-def assign_flight(row_id: int, payload: AssignFlightRequest, db: Session = Depends(get_db)) -> PlanningWorkbenchRow:
+def assign_flight(
+    row_id: int, payload: AssignFlightRequest, db: Session = Depends(get_db)
+) -> PlanningWorkbenchRow:
     row = db.get(PlanningWorkbenchRow, row_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Workbench row not found")
@@ -176,7 +188,9 @@ def assign_flight(row_id: int, payload: AssignFlightRequest, db: Session = Depen
 
 
 @router.post("/fix-plan", response_model=OperationResult)
-def finalize_plan(payload: FixPlanRequest, db: Session = Depends(get_db)) -> OperationResult:
+def finalize_plan(
+    payload: FixPlanRequest, db: Session = Depends(get_db)
+) -> OperationResult:
     query = db.query(PlanningWorkbenchRow)
     if payload.row_ids:
         query = query.filter(PlanningWorkbenchRow.id.in_(payload.row_ids))
@@ -186,9 +200,14 @@ def finalize_plan(payload: FixPlanRequest, db: Session = Depends(get_db)) -> Ope
     errors = fix_plan(db, rows)
     if errors:
         db.rollback()
-        raise HTTPException(status_code=400, detail={"message": "Plan fixation blocked", "errors": errors})
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "Plan fixation blocked", "errors": errors},
+        )
     db.commit()
-    return OperationResult(status="ok", message="Plan fixed", affected_row_ids=[row.id for row in rows])
+    return OperationResult(
+        status="ok", message="Plan fixed", affected_row_ids=[row.id for row in rows]
+    )
 
 
 @router.post("/auto-plan")
@@ -196,77 +215,12 @@ def auto_plan_workbench(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Automated preliminary planning based on Supply Chain rules.
-    1. Finds all pending rows without AWBs.
-    2. Groups by (airport_code, temperature_mode).
-    3. Finds carrier from SupplyChainRule.
-    4. Allocates an AWB from AwbBlankRange.
-    5. Returns warnings if no blanks or no rules.
-    """
-    unplanned_rows = db.query(PlanningWorkbenchRow).filter(
-        PlanningWorkbenchRow.awb_number.is_(None),
-        PlanningWorkbenchRow.booking_status == "pending"
-    ).all()
+    from app.services.planning_engine import run_auto_planning
 
-    if not unplanned_rows:
-        return {"status": "info", "message": "Нет строк для планирования"}
-
-    rules = {r.airport_code: r.carrier_code for r in db.query(SupplyChainRule).all()}
-    
-    from collections import defaultdict
-    groups = defaultdict(list)
-    for row in unplanned_rows:
-        groups[(row.airport_code, row.temperature_mode)].append(row)
-    
-    warnings = []
-    success_count = 0
-    assigned_awbs = 0
-
-    for (airport, temp), rows in groups.items():
-        carrier = rules.get(airport)
-        if not carrier:
-            warnings.append(f"Нет цепи поставок для направления {airport}")
-            continue
-
-        airline = db.query(AirlineDetails).filter(AirlineDetails.carrier_code == carrier).first()
-        if not airline:
-            warnings.append(f"Авиакомпания {carrier} не найдена в системе")
-            continue
-
-        blank_range = db.query(AwbBlankRange).filter(
-            AwbBlankRange.airline_id == airline.id,
-            AwbBlankRange.is_active == True,
-            AwbBlankRange.current_number <= AwbBlankRange.end_number
-        ).first()
-
-        if not blank_range:
-            warnings.append(f"У авиакомпании {carrier} (маршрут на {airport}) закончились бланки AWB!")
-            continue
-
-        base_num = str(blank_range.current_number).zfill(7)
-        check_digit = int(base_num) % 7
-        awb_full = f"{airline.awb_prefix}-{base_num}{check_digit}"
-
-        blank_range.current_number += 1
-
-        for row in rows:
-            row.awb_number = awb_full
-            row.is_auto_planned = True
-            success_count += 1
-        
-        assigned_awbs += 1
-
-    db.commit()
-
-    if not success_count and warnings:
+    result, warnings = run_auto_planning(db)
+    if not result and warnings:
         raise HTTPException(status_code=400, detail=" | ".join(warnings))
-
-    msg = f"Успешно спланировано {success_count} строк в {assigned_awbs} AWB."
-    if warnings:
-        msg += " Предупреждения: " + "; ".join(warnings)
-
-    return {"status": "success", "message": msg}
+    return result
 
 
 @router.get("/snapshot/{row_id}")
@@ -283,3 +237,129 @@ def row_changes(row_id: int, db: Session = Depends(get_db)):
     if row is None:
         raise HTTPException(status_code=404, detail="Workbench row not found")
     return get_entity_changelog(db, "PlanningWorkbenchRow", row_id)
+
+
+@router.delete("/{row_id}", status_code=204)
+def delete_workbench_row(
+    row_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=403, detail="Only administrators can delete orders"
+        )
+
+    row = db.get(PlanningWorkbenchRow, row_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Workbench row not found")
+
+    db.delete(row)
+    db.commit()
+    return None
+
+
+from pydantic import BaseModel
+
+
+class UpdateWorkbenchRowRequest(BaseModel):
+    places_count: int | None = None
+    weight_total: float | None = None
+    volume_total: float | None = None
+
+
+@router.patch("/{row_id}", response_model=WorkbenchRowRead)
+def update_workbench_row(
+    row_id: int,
+    payload: UpdateWorkbenchRowRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=403, detail="Only administrators can modify orders"
+        )
+
+    row = db.get(PlanningWorkbenchRow, row_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Workbench row not found")
+
+    if payload.places_count is not None:
+        row.places_count = payload.places_count
+    if payload.weight_total is not None:
+        row.weight_total = payload.weight_total
+    if payload.volume_total is not None:
+        row.volume_total = payload.volume_total
+
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+import csv
+import io
+
+
+@router.post("/import-csv", response_model=OperationResult)
+def import_workbench_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files are allowed.")
+
+    content = file.file.read().decode("utf-8-sig")  # handle BOM if present
+    csv_file = io.StringIO(content)
+
+    first_line = content.split("\n")[0]
+    delimiter = ";" if ";" in first_line else ","
+    reader = csv.DictReader(csv_file, delimiter=delimiter)
+
+    created_count = 0
+    for row in reader:
+        places_str = row.get("Места", "1").strip() or "1"
+        weight_str = row.get("Вес", "1").strip() or "1"
+        vol_str = row.get("Объем", "0").strip() or "0"
+
+        try:
+            places = int(float(places_str))
+        except:
+            places = 1
+
+        try:
+            weight = float(weight_str.replace(",", "."))
+        except:
+            weight = 1.0
+
+        try:
+            volume = float(vol_str.replace(",", "."))
+        except:
+            volume = 0.0
+
+        direction = row.get("Направление", "").strip() or "UNKNOWN"
+        airport = row.get("Аэропорт", "").strip() or "UNK"
+
+        db_row = PlanningWorkbenchRow(
+            workbench_date=datetime.now(),
+            direction_code=direction,
+            direction_name=direction,
+            airport_code=airport,
+            places_count=places,
+            weight_total=weight,
+            volume_total=volume,
+            temperature_mode=row.get("Температура", "+15..+25").strip() or "+15..+25",
+            cargo_profile=row.get("Груз", "General").strip() or "General",
+            box_type_summary=row.get("Тара", "").strip(),
+            booking_status="draft",
+            operator_comment=f"Клиент: {row.get('Клиент', 'CSV Import').strip() or 'CSV Import'}",
+        )
+        db.add(db_row)
+        created_count += 1
+
+    db.commit()
+    return OperationResult(
+        status="ok",
+        message=f"Импортировано {created_count} строк.",
+        affected_row_ids=[],
+    )

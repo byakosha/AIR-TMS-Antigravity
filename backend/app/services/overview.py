@@ -1,34 +1,63 @@
 from __future__ import annotations
 
+from app.models.entities import AirWaybill, Flight, PlanningWorkbenchRow, User
+from app.schemas.overview import (OverviewAlertRead, OverviewSnapshotRead,
+                                  OverviewStageRead, OverviewStatRead,
+                                  OverviewSummaryRead)
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-
-from app.models.entities import AirWaybill, Flight, PlanningWorkbenchRow, User
-from app.schemas.overview import (
-    OverviewAlertRead,
-    OverviewSnapshotRead,
-    OverviewStageRead,
-    OverviewStatRead,
-    OverviewSummaryRead,
-)
 
 
 def get_overview_summary(db: Session) -> OverviewSummaryRead:
     total_rows = db.query(PlanningWorkbenchRow.id).count()
-    rows_with_awb = db.query(PlanningWorkbenchRow.id).filter(PlanningWorkbenchRow.awb_number.isnot(None)).count()
-    rows_without_awb = db.query(PlanningWorkbenchRow.id).filter(PlanningWorkbenchRow.awb_number.is_(None)).count()
-    pending_bookings = db.query(PlanningWorkbenchRow.id).filter(PlanningWorkbenchRow.booking_status.in_(["pending", "draft"])).count()
-    partial_execution = db.query(PlanningWorkbenchRow.id).filter(PlanningWorkbenchRow.execution_status == "flown_partial").count()
-    outside_manifest = db.query(PlanningWorkbenchRow.id).filter(PlanningWorkbenchRow.is_outside_final_manifest.is_(True)).count()
+    rows_with_awb = (
+        db.query(PlanningWorkbenchRow.id)
+        .filter(PlanningWorkbenchRow.awb_number.isnot(None))
+        .count()
+    )
+    rows_without_awb = (
+        db.query(PlanningWorkbenchRow.id)
+        .filter(PlanningWorkbenchRow.awb_number.is_(None))
+        .count()
+    )
+    pending_bookings = (
+        db.query(PlanningWorkbenchRow.id)
+        .filter(PlanningWorkbenchRow.booking_status.in_(["pending", "draft"]))
+        .count()
+    )
+    partial_execution = (
+        db.query(PlanningWorkbenchRow.id)
+        .filter(PlanningWorkbenchRow.execution_status == "flown_partial")
+        .count()
+    )
+    outside_manifest = (
+        db.query(PlanningWorkbenchRow.id)
+        .filter(PlanningWorkbenchRow.is_outside_final_manifest.is_(True))
+        .count()
+    )
     total_awbs = db.query(AirWaybill.id).count()
     total_flights = db.query(Flight.id).count()
     total_users = db.query(User.id).count()
 
     hero_stats = [
-        OverviewStatRead(label="Строк в манифесте", value=str(total_rows), note="все активные рабочие строки"),
-        OverviewStatRead(label="AWB привязано", value=str(rows_with_awb), note="строки с номером авианакладной"),
-        OverviewStatRead(label="Рейсы в контуре", value=str(total_flights), note="плановые flight records"),
-        OverviewStatRead(label="Пользователи", value=str(total_users), note="активные учетные записи"),
+        OverviewStatRead(
+            label="Строк в манифесте",
+            value=str(total_rows),
+            note="все активные рабочие строки",
+        ),
+        OverviewStatRead(
+            label="AWB привязано",
+            value=str(rows_with_awb),
+            note="строки с номером авианакладной",
+        ),
+        OverviewStatRead(
+            label="Рейсы в контуре",
+            value=str(total_flights),
+            note="плановые flight records",
+        ),
+        OverviewStatRead(
+            label="Пользователи", value=str(total_users), note="активные учетные записи"
+        ),
     ]
 
     pipeline = [
@@ -116,7 +145,10 @@ def get_overview_summary(db: Session) -> OverviewSummaryRead:
         )
         for row in (
             db.query(PlanningWorkbenchRow)
-            .order_by(PlanningWorkbenchRow.custom_sort_order.asc(), PlanningWorkbenchRow.id.desc())
+            .order_by(
+                PlanningWorkbenchRow.custom_sort_order.asc(),
+                PlanningWorkbenchRow.id.desc(),
+            )
             .limit(4)
             .all()
         )

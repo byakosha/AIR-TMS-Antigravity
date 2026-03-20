@@ -1,7 +1,6 @@
+from app.core.config import settings
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-
-from app.core.config import settings
 
 engine_kwargs = {"future": True, "pool_pre_ping": True}
 if settings.database_url.startswith("sqlite"):

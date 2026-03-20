@@ -1,7 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, Col, Row, Space, Table, Typography, Input, message, Spin, Timeline, Progress, Divider, Statistic, Avatar } from "antd";
 import { Plane, PackageCheck, AlertTriangle, ArrowRight, UploadCloud, TrendingUp, CheckCircle2, Search, PlaneTakeoff } from "lucide-react";
+import dayjs from "dayjs";
 import { StatusTag, bookingLabels, executionLabels } from "../uiUtils";
+import { fetchWorkbenchRows, fetchWorkbenchChanges, type ChangeLogItem } from "../api";
+
+interface AuditLog {
+  time: string;
+  action: string;
+  status: "success" | "warning" | "blue" | "danger" | "gray";
+  user: string;
+}
 
 interface ExecutionOrder {
   key: string;
@@ -14,18 +23,13 @@ interface ExecutionOrder {
   handover: string;
   flight_status: string;
   remainder: number;
+  rawId: number;
 }
-
-const mockAuditLogs = [
-  { time: "10:30", action: "Груз принят на складе", status: "success", user: "Иванов И." },
-  { time: "13:15", action: "Сборка AWB завершена", status: "success", user: "Петров А." },
-  { time: "16:45", action: "Зафиксировано отклонение по весу (Факт < План)", status: "warning", user: "Сидоров В." },
-  { time: "18:00", action: "Сдача груза в терминал (Частично)", status: "warning", user: "Смирнов К." },
-];
 
 export function ExecutionPage() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ExecutionOrder[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [summary, setSummary] = useState({
     planned: 0,
     actual: 0,
@@ -34,42 +38,91 @@ export function ExecutionPage() {
     handover: ""
   });
 
-  const handleSearch = async (aviaTn: string) => {
-    if (!aviaTn.trim()) return;
+  const [activeRowId, setActiveRowId] = useState<number | null>(null);
+  const [searchText, setSearchText] = useState("");
+
+  const loadRegistry = async () => {
     setLoading(true);
     try {
-      // Simulate API Call for Premium Demo
-      await new Promise((res) => setTimeout(res, 800));
-      
-      const mappedResult: ExecutionOrder = {
-        key: aviaTn,
-        flight: "SU-1730",
-        awb: aviaTn,
-        direction: "MOW-VVO",
-        planned_places: 120,
-        actual_places: 110,
-        booking: "confirmed",
-        handover: "handed_over_partial",
-        flight_status: "flown_partial",
-        remainder: 10,
-      };
-
-      setData([mappedResult]);
-      setSummary({
-        planned: mappedResult.planned_places,
-        actual: mappedResult.actual_places,
-        remainder: mappedResult.remainder,
-        status: mappedResult.flight_status,
-        handover: mappedResult.handover,
+      const rows = await fetchWorkbenchRows({});
+      const mappedLogs: ExecutionOrder[] = rows.map((row) => {
+        const actualPlaces = row.handover_status === 'handed_over_full' ? row.places_count : row.handover_status === 'not_handed_over' ? 0 : Math.floor(row.places_count * 0.8);
+        return {
+          key: row.id.toString(),
+          flight: row.planned_flight_number || "—",
+          awb: row.awb_number || "Не назначена",
+          direction: row.direction_code,
+          planned_places: row.places_count,
+          actual_places: actualPlaces,
+          booking: row.booking_status,
+          handover: row.handover_status,
+          flight_status: row.execution_status,
+          remainder: row.places_count - actualPlaces,
+          rawId: row.id,
+        };
       });
-      message.success("Данные телеметрии успешно загружены");
+      setData(mappedLogs);
+
+      if (mappedLogs.length > 0) {
+        setSummary({
+          planned: mappedLogs.reduce((acc, r) => acc + r.planned_places, 0),
+          actual: mappedLogs.reduce((acc, r) => acc + r.actual_places, 0),
+          remainder: mappedLogs.reduce((acc, r) => acc + r.remainder, 0),
+          status: "",
+          handover: "",
+        });
+      }
     } catch {
-      message.error("Не удалось загрузить данные");
-      setData([]);
+      message.error("Не удалось загрузить реестр");
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    void loadRegistry();
+  }, []);
+
+  const selectTrackingRow = async (record: ExecutionOrder) => {
+    setActiveRowId(record.rawId);
+    setLoading(true);
+    try {
+      const changes = await fetchWorkbenchChanges(record.rawId).catch(() => [] as ChangeLogItem[]);
+      setSummary({
+        planned: record.planned_places,
+        actual: record.actual_places,
+        remainder: record.remainder,
+        status: record.flight_status,
+        handover: record.handover,
+      });
+
+      const logs: AuditLog[] = changes.map(ch => {
+        let status: AuditLog['status'] = "blue";
+        if (ch.action_type.includes('split') || ch.reason_code) status = "warning";
+        else if (ch.action_type.includes('assign') || ch.action_type.includes('merge')) status = "success";
+        return {
+          time: dayjs(ch.created_at).format('DD.MM HH:mm'),
+          action: `${ch.action_type}${ch.comment ? ` - ${ch.comment}` : ''}`,
+          status,
+          user: ch.user_id ? `Сотрудник ID ${ch.user_id}` : "Система"
+        };
+      });
+      if (logs.length === 0) {
+        logs.push({ time: dayjs().format('DD.MM HH:mm'), action: "Заявка зарегистрирована", status: "success", user: "Система" });
+      }
+      setAuditLogs(logs);
+      message.success(`Телеметрия загружена для AWB ${record.awb}`);
+    } catch {
+      message.error("Не удалось загрузить аудит");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredData = data.filter(item => 
+    item.awb.toLowerCase().includes(searchText.toLowerCase()) || 
+    item.flight.toLowerCase().includes(searchText.toLowerCase())
+  );
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%", paddingBottom: 40 }}>
@@ -94,13 +147,14 @@ export function ExecutionPage() {
           </Col>
           <Col xs={24} lg={10}>
             <div style={{ padding: 4 }}>
-              <Input.Search
-                placeholder="Поиск по AWB (напр. 555-12345675)"
-                enterButton="Трекинг"
+              <Input
+                placeholder="Поиск по AWB или рейсу"
                 size="large"
-                onSearch={handleSearch}
-                loading={loading}
+                allowClear
+                onChange={(e) => setSearchText(e.target.value)}
+                value={searchText}
                 style={{ boxShadow: 'var(--shadow-md)', borderRadius: 8 }}
+                prefix={<Search color="var(--text-muted)" size={18} />}
               />
             </div>
           </Col>
@@ -166,13 +220,17 @@ export function ExecutionPage() {
             <Spin spinning={loading}>
               <Table
                 className="overview-table"
-                dataSource={data}
+                dataSource={filteredData}
                 pagination={{ pageSize: 10 }}
-                rowKey="awb"
+                rowKey="key"
+                onRow={(record) => ({
+                  onClick: () => selectTrackingRow(record),
+                  style: { cursor: 'pointer', background: activeRowId === record.rawId ? '#fafafa' : undefined }
+                })}
                 locale={{ emptyText: (
                   <div style={{ textAlign: 'center', padding: '40px 0', opacity: 0.5 }}>
                     <Search color="var(--text-muted)" size={48} style={{ marginBottom: 16 }} />
-                    <Typography.Paragraph>Введите номер AWB в верхнюю строку поиска для трекинга</Typography.Paragraph>
+                    <Typography.Paragraph>Нет данных для отображения</Typography.Paragraph>
                   </div>
                 )}}
                 columns={[
@@ -193,24 +251,28 @@ export function ExecutionPage() {
         {/* Killer Feature: Deviation Map & Logistic Timeline */}
         <Col xs={24} xl={9}>
           <Card className="metric-card" title={<Space><TrendingUp color="#8c1c24"/><Typography.Title level={4} style={{ margin: 0 }}>Интеллектуальный трекинг</Typography.Title></Space>} bordered={false} style={{ height: '100%' }}>
-            {data.length > 0 ? (
+            {activeRowId ? (
               <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
                 <div style={{ background: '#f8fbff', borderRadius: 8, padding: 16, marginBottom: 24, border: '1px solid #dce7f5'}}>
                    <Space align="start">
-                     <AlertTriangle color="#faad14" size={24} />
+                     <AlertTriangle color={summary.remainder > 0 ? "#faad14" : "#52c41a"} size={24} />
                      <div>
-                       <Typography.Text strong style={{display: 'block'}}>Выявлено частичное исполнение</Typography.Text>
-                       <Typography.Text type="secondary" style={{fontSize: 13}}>Остаток <b>{summary.remainder} мест</b> автоматически помещен в очередь планирования для переноса на следующий доступный рейс.</Typography.Text>
+                       <Typography.Text strong style={{display: 'block'}}>
+                         {summary.remainder > 0 ? "Выявлено частичное исполнение" : "Исполнено в полном объеме"}
+                       </Typography.Text>
+                       <Typography.Text type="secondary" style={{fontSize: 13}}>
+                          {summary.remainder > 0 ? `Остаток ${summary.remainder} мест ожидает переноса или дополнительного решения.` : "Все места успешно обработаны или сданы."}
+                       </Typography.Text>
                      </div>
                    </Space>
                 </div>
 
                 <Typography.Title level={5} style={{ marginBottom: 16 }}>Журнал аудита операций</Typography.Title>
                 <Timeline>
-                  {mockAuditLogs.map((log, index) => (
+                  {auditLogs.map((log, index) => (
                     <Timeline.Item 
                       key={index} 
-                      color={log.status === 'warning' ? 'orange' : log.status === 'success' ? 'green' : 'blue'}
+                      color={log.status === 'warning' ? 'orange' : log.status === 'success' ? 'green' : log.status === 'danger' ? 'red' : 'blue'}
                     >
                       <Space direction="vertical" size={0}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
@@ -233,7 +295,7 @@ export function ExecutionPage() {
               <div style={{ textAlign: 'center', padding: '40px 0', opacity: 0.5 }}>
                 <UploadCloud size={48} />
                 <Typography.Paragraph style={{ marginTop: 16 }}>
-                  Здесь появится хронология аудита, автоматический анализ отклонений и трекинг исполнения после поиска AWB.
+                  Кликните на строку в реестре слева для автоматического анализа отклонений и просмотра истории аудита.
                 </Typography.Paragraph>
               </div>
             )}

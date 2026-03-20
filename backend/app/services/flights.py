@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy.orm import Session
-
 from app.models.entities import Flight
+from sqlalchemy.orm import Session
 
 DEMO_FLIGHTS = [
     Flight(

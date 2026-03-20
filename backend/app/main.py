@@ -1,9 +1,8 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-
 from app.api.router import api_router
 from app.core.bootstrap import initialize_database, seed_if_needed
 from app.core.config import settings
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
     title="BIOCARD Aviation TMS API",
@@ -31,7 +30,3 @@ def root() -> dict[str, str]:
 def on_startup() -> None:
     initialize_database()
     seed_if_needed()
-
-
-
-

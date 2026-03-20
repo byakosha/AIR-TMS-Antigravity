@@ -1,7 +1,7 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
+from app.db.base import Base
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
-from app.db.base import Base
 
 class AirlineDetails(Base):
     __tablename__ = "airline_details"
@@ -11,7 +11,9 @@ class AirlineDetails(Base):
     name = Column(String(255), nullable=False)
     awb_prefix = Column(String(5), nullable=False)
 
-    awb_ranges = relationship("AwbBlankRange", back_populates="airline", cascade="all, delete-orphan")
+    awb_ranges = relationship(
+        "AwbBlankRange", back_populates="airline", cascade="all, delete-orphan"
+    )
 
 
 class AwbBlankRange(Base):
@@ -31,5 +33,11 @@ class SupplyChainRule(Base):
     __tablename__ = "supply_chain_rules"
 
     id = Column(Integer, primary_key=True, index=True)
-    airport_code = Column(String(10), unique=True, index=True, nullable=False) # e.g., OVB
-    carrier_code = Column(String(10), nullable=False) # Maps to AirlineDetails.carrier_code
+    airport_code = Column(
+        String(10), index=True, nullable=False
+    )  # No longer unique, allows multiple routing rules
+    carrier_code = Column(
+        String(10), nullable=False
+    )  # Maps to AirlineDetails.carrier_code
+    cargo_profile = Column(String(128), nullable=True)
+    temperature_mode = Column(String(64), nullable=True)

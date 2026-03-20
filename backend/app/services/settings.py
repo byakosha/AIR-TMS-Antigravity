@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
-
 from app.data.airports import AIRPORTS
 from app.models.entities import AirWaybill, Flight, PlanningWorkbenchRow, User
-from app.schemas.settings import (
-    SettingsHeroStatRead,
-    SettingsSectionItemRead,
-    SettingsSectionRead,
-    SettingsSideMetricRead,
-    SettingsSummaryRead,
-)
+from app.schemas.settings import (SettingsHeroStatRead,
+                                  SettingsSectionItemRead, SettingsSectionRead,
+                                  SettingsSideMetricRead, SettingsSummaryRead)
+from sqlalchemy.orm import Session
 
 SETTINGS_SECTIONS = [
     SettingsSectionRead(
@@ -168,10 +163,14 @@ def get_settings_summary(db: Session) -> SettingsSummaryRead:
     ]
 
     side_metrics = [
-        SettingsSideMetricRead(label="Справочники", value="аэропорты, направления, статусы"),
+        SettingsSideMetricRead(
+            label="Справочники", value="аэропорты, направления, статусы"
+        ),
         SettingsSideMetricRead(label="Интеграции", value="1С TMS, API, polling"),
         SettingsSideMetricRead(label="Доступ", value="роли, аудит, права"),
-        SettingsSideMetricRead(label="Пользователи", value="demo accounts, login, RBAC"),
+        SettingsSideMetricRead(
+            label="Пользователи", value="demo accounts, login, RBAC"
+        ),
     ]
 
     return SettingsSummaryRead(

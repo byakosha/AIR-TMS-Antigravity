@@ -1,9 +1,8 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-
 from app.db.session import get_db
 from app.schemas.settings import SettingsSummaryRead
 from app.services.settings import get_settings_summary
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 

@@ -2,19 +2,32 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
-
 from app.db.base import Base
+from sqlalchemy import (JSON, Boolean, DateTime, Float, ForeignKey, Integer,
+                        String, Text)
+from sqlalchemy.orm import Mapped, mapped_column
 
 
 class TimestampMixin:
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+
+
+class Client(TimestampMixin, Base):
+    __tablename__ = "clients"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    inn: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    contract_number: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class User(TimestampMixin, Base):
@@ -28,7 +41,9 @@ class User(TimestampMixin, Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False)
-    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class Order(TimestampMixin, Base):
@@ -56,7 +71,9 @@ class PlanningWorkbenchRow(TimestampMixin, Base):
     __tablename__ = "planning_workbench_rows"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    workbench_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    workbench_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
     direction_code: Mapped[str] = mapped_column(String(32), index=True)
     direction_name: Mapped[str] = mapped_column(String(255))
     airport_code: Mapped[str] = mapped_column(String(16), index=True)
@@ -67,9 +84,15 @@ class PlanningWorkbenchRow(TimestampMixin, Base):
     places_count: Mapped[int] = mapped_column(Integer, default=0)
     weight_total: Mapped[float] = mapped_column(Float, default=0)
     volume_total: Mapped[float] = mapped_column(Float, default=0)
-    awb_id: Mapped[int | None] = mapped_column(ForeignKey("air_waybills.id"), nullable=True, index=True)
-    awb_number: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-    planned_flight_id: Mapped[int | None] = mapped_column(ForeignKey("flights.id"), nullable=True, index=True)
+    awb_id: Mapped[int | None] = mapped_column(
+        ForeignKey("air_waybills.id"), nullable=True, index=True
+    )
+    awb_number: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    planned_flight_id: Mapped[int | None] = mapped_column(
+        ForeignKey("flights.id"), nullable=True, index=True
+    )
     planned_flight_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
     booking_status: Mapped[str] = mapped_column(String(64), default="pending")
     handover_status: Mapped[str] = mapped_column(String(64), default="not_handed_over")
@@ -77,7 +100,9 @@ class PlanningWorkbenchRow(TimestampMixin, Base):
     operator_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     color_tag: Mapped[str | None] = mapped_column(String(32), nullable=True)
     custom_sort_order: Mapped[int] = mapped_column(Integer, default=0)
-    owner_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    owner_user_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, index=True
+    )
     is_outside_final_manifest: Mapped[bool] = mapped_column(Boolean, default=False)
     is_auto_planned: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -114,7 +139,9 @@ class Flight(TimestampMixin, Base):
     status_api: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status_internal: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_type: Mapped[str] = mapped_column(String(64), default="manual")
-    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class FlightAssignment(TimestampMixin, Base):
@@ -122,16 +149,22 @@ class FlightAssignment(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     flight_id: Mapped[int] = mapped_column(ForeignKey("flights.id"), index=True)
-    awb_id: Mapped[int | None] = mapped_column(ForeignKey("air_waybills.id"), nullable=True, index=True)
+    awb_id: Mapped[int | None] = mapped_column(
+        ForeignKey("air_waybills.id"), nullable=True, index=True
+    )
     workbench_row_id: Mapped[int | None] = mapped_column(
         ForeignKey("planning_workbench_rows.id"), nullable=True, index=True
     )
     assignment_status: Mapped[str] = mapped_column(String(64), default="planned")
     assigned_places: Mapped[int] = mapped_column(Integer, default=0)
     assigned_weight: Mapped[float] = mapped_column(Float, default=0)
-    planned_departure_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    planned_departure_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     manual_override_flag: Mapped[bool] = mapped_column(Boolean, default=False)
-    split_group_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    split_group_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
     comments: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
@@ -146,10 +179,18 @@ class BookingRecord(TimestampMixin, Base):
     booking_status: Mapped[str] = mapped_column(String(64), default="pending")
     booking_response_raw: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     quota_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    requested_flight_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    confirmed_flight_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    requested_departure_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    confirmed_departure_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    requested_flight_number: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    confirmed_flight_number: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    requested_departure_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    confirmed_departure_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
@@ -159,8 +200,12 @@ class PartialExecutionItem(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     parent_entity_type: Mapped[str] = mapped_column(String(64), index=True)
     parent_entity_id: Mapped[int] = mapped_column(Integer, index=True)
-    flight_id: Mapped[int | None] = mapped_column(ForeignKey("flights.id"), nullable=True)
-    awb_id: Mapped[int | None] = mapped_column(ForeignKey("air_waybills.id"), nullable=True)
+    flight_id: Mapped[int | None] = mapped_column(
+        ForeignKey("flights.id"), nullable=True
+    )
+    awb_id: Mapped[int | None] = mapped_column(
+        ForeignKey("air_waybills.id"), nullable=True
+    )
     places_planned: Mapped[int] = mapped_column(Integer, default=0)
     places_flown: Mapped[int] = mapped_column(Integer, default=0)
     places_remaining: Mapped[int] = mapped_column(Integer, default=0)
@@ -180,7 +225,9 @@ class ChangeLog(Base):
     reason_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
 
 
 class UserViewProfile(TimestampMixin, Base):

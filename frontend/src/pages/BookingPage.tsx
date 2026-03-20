@@ -1,18 +1,34 @@
-import { Button, Card, Col, Row, Space, Table, Tag, Typography } from "antd";
-
-const data = [
-  {
-    key: 1,
-    date: "2026-03-19",
-    awb: "555-12345675",
-    route: "LED-MOW-KGD",
-    agent: "Агент A",
-    flight: "SU-012",
-    status: "pending",
-  },
-];
+import { useEffect, useState } from "react";
+import { Button, Card, Col, Row, Space, Table, Tag, Typography, message } from "antd";
+import dayjs from "dayjs";
+import { fetchWorkbenchRows, type WorkbenchRow } from "../api";
+import { StatusTag, bookingLabels } from "../uiUtils";
 
 export function BookingPage() {
+  const [data, setData] = useState<WorkbenchRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const rows = await fetchWorkbenchRows({ });
+        // Assume booking desk works with rows that need booking or have awb
+        const bookings = rows.filter(r => r.awb_number || r.booking_status !== 'draft');
+        setData(bookings);
+      } catch (err) {
+        message.error("Не удалось загрузить реестр бронирований");
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, []);
+
+  const totalInWork = data.filter(d => ['pending', 'draft'].includes(d.booking_status)).length;
+  const waitingAnswer = data.filter(d => d.booking_status === 'pending').length;
+  const partialAnswer = data.filter(d => d.booking_status === 'partial').length;
+  const refused = data.filter(d => d.execution_status === 'not_flown' || d.booking_status === 'postponed').length;
+
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <Card className="hero-panel" bordered={false}>
@@ -33,7 +49,7 @@ export function BookingPage() {
           <Card className="metric-card" bordered={false}>
             <Typography.Text type="secondary">В работе</Typography.Text>
             <Typography.Title level={3} style={{ margin: "4px 0 0" }}>
-              1
+              {totalInWork}
             </Typography.Title>
           </Card>
         </Col>
@@ -41,7 +57,7 @@ export function BookingPage() {
           <Card className="metric-card" bordered={false}>
             <Typography.Text type="secondary">Ожидают ответ</Typography.Text>
             <Typography.Title level={3} style={{ margin: "4px 0 0" }}>
-              1
+              {waitingAnswer}
             </Typography.Title>
           </Card>
         </Col>
@@ -49,15 +65,15 @@ export function BookingPage() {
           <Card className="metric-card" bordered={false}>
             <Typography.Text type="secondary">Частичные ответы</Typography.Text>
             <Typography.Title level={3} style={{ margin: "4px 0 0" }}>
-              0
+              {partialAnswer}
             </Typography.Title>
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <Card className="metric-card" bordered={false}>
-            <Typography.Text type="secondary">Отказы</Typography.Text>
+            <Typography.Text type="secondary">Отказы / Не улетели</Typography.Text>
             <Typography.Title level={3} style={{ margin: "4px 0 0" }}>
-              0
+              {refused}
             </Typography.Title>
           </Card>
         </Col>
@@ -78,20 +94,22 @@ export function BookingPage() {
           >
             <Table
               className="overview-table"
+              loading={loading}
               pagination={false}
               dataSource={data}
-              rowClassName={(record) => record.status === 'confirmed' ? 'overview-row-confirmed' : record.status === 'pending' ? 'overview-row-pending' : ''}
+              rowKey="id"
+              rowClassName={(record) => record.booking_status === 'confirmed' ? 'overview-row-confirmed' : record.booking_status === 'pending' ? 'overview-row-pending' : ''}
               columns={[
-                { title: "Дата", dataIndex: "date", key: "date" },
-                { title: "AWB", dataIndex: "awb", key: "awb" },
-                { title: "Маршрут", dataIndex: "route", key: "route" },
-                { title: "Агент", dataIndex: "agent", key: "agent" },
-                { title: "Рейс", dataIndex: "flight", key: "flight" },
+                { title: "Дата", dataIndex: "workbench_date", key: "date", render: (val) => val ? dayjs(val).format('YYYY-MM-DD') : '—' },
+                { title: "AWB", dataIndex: "awb_number", key: "awb", render: (val) => val ?? '—' },
+                { title: "Маршрут", dataIndex: "direction_code", key: "route" },
+                { title: "Клиент", dataIndex: "client_name", key: "client", render: (val) => val ?? '—' },
+                { title: "Рейс", dataIndex: "planned_flight_number", key: "flight", render: (val) => val ?? '—' },
                 {
                   title: "Статус",
-                  dataIndex: "status",
+                  dataIndex: "booking_status",
                   key: "status",
-                  render: (value: string) => <Tag color={value === 'confirmed' ? 'green' : 'gold'}>{value === 'confirmed' ? 'Подтверждено' : 'Ожидает'}</Tag>,
+                  render: (value: string) => <StatusTag status={value} type="booking" />,
                 },
               ]}
             />
@@ -101,7 +119,7 @@ export function BookingPage() {
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
             <Card className="metric-card" title="Карточка бронирования" bordered={false}>
               <Typography.Text type="secondary">
-                Здесь будет храниться ответ перевозчика, ответ агента и история изменений.
+                Здесь будет храниться ответ перевозчика, ответ агента и история изменений. Выберите строку слева.
               </Typography.Text>
             </Card>
             <Card className="metric-card" title="Что важно проверять" bordered={false}>

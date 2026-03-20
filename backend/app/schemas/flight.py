@@ -1,5 +1,7 @@
 from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict
+
 
 class FlightBase(BaseModel):
     flight_number: str
@@ -11,14 +13,17 @@ class FlightBase(BaseModel):
     status_api: str | None = None
     status_internal: str | None = None
 
+
 class FlightCreate(FlightBase):
     pass
+
 
 class FlightUpdate(BaseModel):
     etd: datetime | None = None
     eta: datetime | None = None
     status_api: str | None = None
     status_internal: str | None = None
+
 
 class FlightResponse(FlightBase):
     id: int

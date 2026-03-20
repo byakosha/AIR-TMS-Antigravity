@@ -288,6 +288,13 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* Kanban / Planning Cards */
+.planning-grid {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  min-height: 70vh;
+}
+
 .awb-card {
   border-radius: var(--radius-md) !important;
   background: var(--bg-elevated) !important;
@@ -304,6 +311,20 @@ h1, h2, h3, h4, h5, h6 {
   border-radius: var(--radius-lg) !important;
   background: #f4f6f9 !important;
   border: none !important;
+  display: flex;
+  flex-direction: column;
+}
+
+.planning-column-left {
+  flex: 0 0 350px;
+}
+
+.planning-column-center {
+  flex: 1 1 auto;
+}
+
+.planning-column-right {
+  flex: 0 0 320px;
 }
 
 .planning-column .ant-card-head {

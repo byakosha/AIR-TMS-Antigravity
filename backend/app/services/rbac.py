@@ -19,4 +19,3 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
 def has_permission(role: Role, permission: str) -> bool:
     permissions = ROLE_PERMISSIONS.get(role, set())
     return permission in permissions or permission.split(":")[0] + ":*" in permissions
-

@@ -60,6 +60,16 @@ class SplitWorkbenchRowRequest(BaseModel):
     operator_comment: str | None = None
 
 
+class CreateManualOrderRequest(BaseModel):
+    direction_code: str
+    airport_code: str
+    places_count: int
+    weight_total: float
+    volume_total: float
+    temperature_mode: str
+    box_type_summary: str | None = None
+
+
 class MergeWorkbenchRowsRequest(BaseModel):
     row_ids: list[int]
     target_row_id: int | None = None

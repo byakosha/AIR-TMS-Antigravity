@@ -1,9 +1,8 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-
 from app.db.session import get_db
 from app.models.entities import Order
 from app.schemas.order import OrderCreate, OrderRead
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 
@@ -20,4 +19,3 @@ def create_order(payload: OrderCreate, db: Session = Depends(get_db)) -> Order:
     db.commit()
     db.refresh(order)
     return order
-

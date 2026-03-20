@@ -2,26 +2,18 @@ from __future__ import annotations
 
 import csv
 import io
+from collections import defaultdict
 from datetime import datetime, time, timezone
 
+from app.models.entities import (AirWaybill, ChangeLog, Flight,
+                                 FlightAssignment, PlanningWorkbenchRow)
+from app.models.planning_rules import (AirlineDetails, AwbBlankRange,
+                                       SupplyChainRule)
+from app.schemas.workbench import (AssignAwbRequest, AssignFlightRequest,
+                                   FixPlanRequest, MergeWorkbenchRowsRequest,
+                                   SplitWorkbenchRowRequest, WorkbenchFilters)
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
-
-from app.models.entities import (
-    AirWaybill,
-    ChangeLog,
-    Flight,
-    FlightAssignment,
-    PlanningWorkbenchRow,
-)
-from app.schemas.workbench import (
-    AssignAwbRequest,
-    AssignFlightRequest,
-    FixPlanRequest,
-    MergeWorkbenchRowsRequest,
-    SplitWorkbenchRowRequest,
-    WorkbenchFilters,
-)
 
 
 def _utc_midnight(value: datetime) -> datetime:
@@ -188,7 +180,9 @@ def seed_demo_workbench(db: Session) -> int:
     existing_rows = {
         row.direction_code: row
         for row in db.query(PlanningWorkbenchRow).filter(
-            PlanningWorkbenchRow.direction_code.in_([row.direction_code for row in demo_rows])
+            PlanningWorkbenchRow.direction_code.in_(
+                [row.direction_code for row in demo_rows]
+            )
         )
     }
 
@@ -246,7 +240,9 @@ def create_changelog(
     )
 
 
-def get_entity_changelog(db: Session, entity_type: str, entity_id: int, limit: int = 20) -> list[ChangeLog]:
+def get_entity_changelog(
+    db: Session, entity_type: str, entity_id: int, limit: int = 20
+) -> list[ChangeLog]:
     return (
         db.query(ChangeLog)
         .filter(ChangeLog.entity_type == entity_type, ChangeLog.entity_id == entity_id)
@@ -265,24 +261,38 @@ def build_workbench_query(db: Session, filters: WorkbenchFilters):
         end = datetime.combine(day, time.max, tzinfo=timezone.utc)
         query = query.filter(PlanningWorkbenchRow.workbench_date.between(start, end))
     if filters.workbench_date_from is not None:
-        start = datetime.combine(filters.workbench_date_from.date(), time.min, tzinfo=timezone.utc)
+        start = datetime.combine(
+            filters.workbench_date_from.date(), time.min, tzinfo=timezone.utc
+        )
         query = query.filter(PlanningWorkbenchRow.workbench_date >= start)
     if filters.workbench_date_to is not None:
-        end = datetime.combine(filters.workbench_date_to.date(), time.max, tzinfo=timezone.utc)
+        end = datetime.combine(
+            filters.workbench_date_to.date(), time.max, tzinfo=timezone.utc
+        )
         query = query.filter(PlanningWorkbenchRow.workbench_date <= end)
 
     if filters.airport_code:
         query = query.filter(PlanningWorkbenchRow.airport_code == filters.airport_code)
     if filters.direction_code:
-        query = query.filter(PlanningWorkbenchRow.direction_code == filters.direction_code)
+        query = query.filter(
+            PlanningWorkbenchRow.direction_code == filters.direction_code
+        )
     if filters.temperature_mode:
-        query = query.filter(PlanningWorkbenchRow.temperature_mode == filters.temperature_mode)
+        query = query.filter(
+            PlanningWorkbenchRow.temperature_mode == filters.temperature_mode
+        )
     if filters.booking_status:
-        query = query.filter(PlanningWorkbenchRow.booking_status == filters.booking_status)
+        query = query.filter(
+            PlanningWorkbenchRow.booking_status == filters.booking_status
+        )
     if filters.handover_status:
-        query = query.filter(PlanningWorkbenchRow.handover_status == filters.handover_status)
+        query = query.filter(
+            PlanningWorkbenchRow.handover_status == filters.handover_status
+        )
     if filters.execution_status:
-        query = query.filter(PlanningWorkbenchRow.execution_status == filters.execution_status)
+        query = query.filter(
+            PlanningWorkbenchRow.execution_status == filters.execution_status
+        )
     if filters.color_tag:
         query = query.filter(PlanningWorkbenchRow.color_tag == filters.color_tag)
     if filters.has_awb is not None:
@@ -298,7 +308,10 @@ def build_workbench_query(db: Session, filters: WorkbenchFilters):
             else PlanningWorkbenchRow.planned_flight_number.is_(None)
         )
     if filters.is_outside_final_manifest is not None:
-        query = query.filter(PlanningWorkbenchRow.is_outside_final_manifest == filters.is_outside_final_manifest)
+        query = query.filter(
+            PlanningWorkbenchRow.is_outside_final_manifest
+            == filters.is_outside_final_manifest
+        )
     if filters.search:
         pattern = f"%{filters.search.strip()}%"
         query = query.filter(
@@ -311,12 +324,14 @@ def build_workbench_query(db: Session, filters: WorkbenchFilters):
                 PlanningWorkbenchRow.operator_comment.ilike(pattern),
             )
         )
-    return query.order_by(PlanningWorkbenchRow.custom_sort_order.asc(), PlanningWorkbenchRow.id.desc())
+    return query.order_by(
+        PlanningWorkbenchRow.custom_sort_order.asc(), PlanningWorkbenchRow.id.desc()
+    )
 
 
 def export_workbench_rows_csv(rows: list[PlanningWorkbenchRow]) -> str:
     buffer = io.StringIO()
-    writer = csv.writer(buffer)
+    writer = csv.writer(buffer, delimiter=";")
     writer.writerow(
         [
             "id",
@@ -366,10 +381,42 @@ def export_workbench_rows_csv(rows: list[PlanningWorkbenchRow]) -> str:
                 row.is_outside_final_manifest,
             ]
         )
-    return buffer.getvalue()
+    return "\ufeff" + buffer.getvalue()
 
 
-def create_or_get_awb(db: Session, awb_number: str, payload: AssignAwbRequest) -> AirWaybill:
+def create_manual_order(db: Session, payload: dict) -> PlanningWorkbenchRow:
+    # A dummy implementation that creates a row for a manual order
+    import random
+    from datetime import timezone
+
+    row = PlanningWorkbenchRow(
+        workbench_date=datetime.now(timezone.utc),
+        direction_code=payload.get("direction_code", "UNKNOWN"),
+        direction_name=payload.get("direction_code", "UNKNOWN"),
+        airport_code=payload.get("airport_code", "XXX"),
+        linked_order_ids=[random.randint(20000, 29999)],
+        temperature_mode=payload.get("temperature_mode", "NO_TEMP_CONTROL"),
+        cargo_profile="general",
+        box_type_summary=payload.get("box_type_summary", ""),
+        places_count=payload.get("places_count", 1),
+        weight_total=payload.get("weight_total", 1.0),
+        volume_total=payload.get("volume_total", 0.01),
+        booking_status="pending",
+        handover_status="not_handed_over",
+        execution_status="pending",
+        color_tag="blue",
+        custom_sort_order=99,
+        is_outside_final_manifest=False,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def create_or_get_awb(
+    db: Session, awb_number: str, payload: AssignAwbRequest
+) -> AirWaybill:
     awb = db.query(AirWaybill).filter(AirWaybill.awb_number == awb_number).one_or_none()
     if awb is not None:
         return awb
@@ -391,7 +438,11 @@ def create_or_get_awb(db: Session, awb_number: str, payload: AssignAwbRequest) -
 
 
 def create_or_get_flight(db: Session, payload: AssignFlightRequest) -> Flight:
-    flight = db.query(Flight).filter(Flight.flight_number == payload.flight_number).one_or_none()
+    flight = (
+        db.query(Flight)
+        .filter(Flight.flight_number == payload.flight_number)
+        .one_or_none()
+    )
     if flight is not None:
         return flight
 
@@ -438,17 +489,32 @@ def row_snapshot(row: PlanningWorkbenchRow) -> dict:
     }
 
 
-def split_workbench_row(db: Session, row: PlanningWorkbenchRow, payload: SplitWorkbenchRowRequest) -> list[PlanningWorkbenchRow]:
-    if payload.split_places_count <= 0 or payload.split_places_count >= row.places_count:
-        raise ValueError("split_places_count must be between 1 and the source places_count - 1")
+def split_workbench_row(
+    db: Session, row: PlanningWorkbenchRow, payload: SplitWorkbenchRowRequest
+) -> list[PlanningWorkbenchRow]:
+    if (
+        payload.split_places_count <= 0
+        or payload.split_places_count >= row.places_count
+    ):
+        raise ValueError(
+            "split_places_count must be between 1 and the source places_count - 1"
+        )
 
     source_before = row_snapshot(row)
     remaining_places = row.places_count - payload.split_places_count
     total_weight = row.weight_total or 0
     total_volume = row.volume_total or 0
     ratio = payload.split_places_count / row.places_count
-    split_weight = payload.split_weight if payload.split_weight is not None else round(total_weight * ratio, 3)
-    split_volume = payload.split_volume if payload.split_volume is not None else round(total_volume * ratio, 3)
+    split_weight = (
+        payload.split_weight
+        if payload.split_weight is not None
+        else round(total_weight * ratio, 3)
+    )
+    split_volume = (
+        payload.split_volume
+        if payload.split_volume is not None
+        else round(total_volume * ratio, 3)
+    )
 
     row.places_count = remaining_places
     row.weight_total = round(total_weight - split_weight, 3)
@@ -487,25 +553,37 @@ def split_workbench_row(db: Session, row: PlanningWorkbenchRow, payload: SplitWo
         entity_id=row.id,
         action_type="split",
         before_json=source_before,
-        after_json={"source_row": row_snapshot(row), "split_row": row_snapshot(split_row)},
+        after_json={
+            "source_row": row_snapshot(row),
+            "split_row": row_snapshot(split_row),
+        },
         comment=payload.operator_comment,
     )
     return [row, split_row]
 
 
-def merge_workbench_rows(db: Session, rows: list[PlanningWorkbenchRow], operator_comment: str | None = None) -> PlanningWorkbenchRow:
+def merge_workbench_rows(
+    db: Session, rows: list[PlanningWorkbenchRow], operator_comment: str | None = None
+) -> PlanningWorkbenchRow:
     if not rows:
         raise ValueError("row_ids cannot be empty")
 
     target = rows[0]
     before = [row_snapshot(row) for row in rows]
     merged_linked_ids = set(target.linked_order_ids)
-    for row in rows[1:]:
+    for i in range(1, len(rows)):
+        row = rows[i]
         merged_linked_ids.update(row.linked_order_ids)
         target.places_count += row.places_count
-        target.weight_total = round((target.weight_total or 0) + (row.weight_total or 0), 3)
-        target.volume_total = round((target.volume_total or 0) + (row.volume_total or 0), 3)
-        target.is_outside_final_manifest = target.is_outside_final_manifest or row.is_outside_final_manifest
+        target.weight_total = round(
+            (target.weight_total or 0) + (row.weight_total or 0), 3
+        )
+        target.volume_total = round(
+            (target.volume_total or 0) + (row.volume_total or 0), 3
+        )
+        target.is_outside_final_manifest = (
+            target.is_outside_final_manifest or row.is_outside_final_manifest
+        )
         if row.awb_number and not target.awb_number:
             target.awb_number = row.awb_number
             target.awb_id = row.awb_id
@@ -530,7 +608,9 @@ def merge_workbench_rows(db: Session, rows: list[PlanningWorkbenchRow], operator
     return target
 
 
-def assign_awb_to_row(db: Session, row: PlanningWorkbenchRow, payload: AssignAwbRequest) -> AirWaybill:
+def assign_awb_to_row(
+    db: Session, row: PlanningWorkbenchRow, payload: AssignAwbRequest
+) -> AirWaybill:
     awb = create_or_get_awb(db, payload.awb_number, payload)
     before = row_snapshot(row)
     row.awb_id = awb.id
@@ -553,7 +633,9 @@ def assign_awb_to_row(db: Session, row: PlanningWorkbenchRow, payload: AssignAwb
     return awb
 
 
-def assign_flight_to_row(db: Session, row: PlanningWorkbenchRow, payload: AssignFlightRequest) -> Flight:
+def assign_flight_to_row(
+    db: Session, row: PlanningWorkbenchRow, payload: AssignFlightRequest
+) -> Flight:
     flight = create_or_get_flight(db, payload)
     before = row_snapshot(row)
     row.planned_flight_id = flight.id

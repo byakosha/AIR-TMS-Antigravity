@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8001/api/v1";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
 export type WorkbenchRow = {
   id: number;
@@ -60,6 +60,8 @@ export interface SupplyChainRule {
   id: number;
   airport_code: string;
   carrier_code: string;
+  cargo_profile?: string;
+  temperature_mode?: string;
 }
 
 export type Flight = {
@@ -355,11 +357,65 @@ export async function fixPlan(payload: Record<string, unknown>): Promise<{ statu
 export async function autoPlan(): Promise<{ status: string; message: string }> {
   const response = await fetch(`${API_BASE_URL}/workbench/auto-plan`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
   });
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(detail || `Failed to auto-plan: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function deleteWorkbenchRow(rowId: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/workbench/${rowId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `Failed to delete row: ${response.status}`);
+  }
+}
+
+export async function updateWorkbenchRow(rowId: number, payload: Record<string, unknown>): Promise<WorkbenchRow> {
+  const response = await fetch(`${API_BASE_URL}/workbench/${rowId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `Failed to update row: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function createManualOrder(payload: Record<string, unknown>): Promise<WorkbenchRow> {
+  const response = await fetch(`${API_BASE_URL}/workbench/manual`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `Failed to create manual order: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function importWorkbenchCsv(file: File): Promise<{ status: string; message: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  
+  const response = await fetch(`${API_BASE_URL}/workbench/import-csv`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: formData,
+  });
+  
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `Failed to import CSV: ${response.status}`);
   }
   return response.json();
 }
