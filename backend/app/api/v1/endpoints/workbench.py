@@ -309,7 +309,11 @@ def import_workbench_csv(
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are allowed.")
 
-    content = file.file.read().decode("utf-8-sig")  # handle BOM if present
+    raw_data = file.file.read()
+    try:
+        content = raw_data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        content = raw_data.decode("windows-1251")  # fallback for Russian Excel CSV
     csv_file = io.StringIO(content)
 
     first_line = content.split("\n")[0]
@@ -340,6 +344,7 @@ def import_workbench_csv(
         direction = row.get("Направление", "").strip() or "UNKNOWN"
         airport = row.get("Аэропорт", "").strip() or "UNK"
 
+        client_val = row.get("Клиент", "").strip() or "CSV Import"
         db_row = PlanningWorkbenchRow(
             workbench_date=datetime.now(),
             direction_code=direction,
@@ -352,7 +357,8 @@ def import_workbench_csv(
             cargo_profile=row.get("Груз", "General").strip() or "General",
             box_type_summary=row.get("Тара", "").strip(),
             booking_status="draft",
-            operator_comment=f"Клиент: {row.get('Клиент', 'CSV Import').strip() or 'CSV Import'}",
+            client_name=client_val,
+            operator_comment="Импорт из CSV",
         )
         db.add(db_row)
         created_count += 1

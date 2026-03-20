@@ -146,7 +146,7 @@ function filtersToFormValues(filters: WorkbenchFilters) {
 }
 function groupRowsByAwb(rows: WorkbenchRow[]): AwbGroup[] {
   const map = new Map<string, WorkbenchRow[]>();
-  rows.filter((r) => r.awb_number).forEach((row) => { const key = row.awb_number ?? "UNASSIGNED"; const bucket = map.get(key) ?? []; bucket.push(row); map.set(key, bucket); });
+  rows.filter((r) => r.awb_number && !r.is_outside_final_manifest).forEach((row) => { const key = row.awb_number ?? "UNASSIGNED"; const bucket = map.get(key) ?? []; bucket.push(row); map.set(key, bucket); });
   return Array.from(map.entries()).map(([awbNumber, items]) => ({ awbNumber, items: items.sort((a,b) => a.custom_sort_order - b.custom_sort_order || a.id - b.id), totalPlaces: items.reduce((s,i) => s + i.places_count, 0), totalWeight: items.reduce((s,i) => s + i.weight_total, 0), totalVolume: items.reduce((s,i) => s + i.volume_total, 0), flight: items[0]?.planned_flight_number ?? null, bookingStatus: items[0]?.booking_status ?? "pending", handoverStatus: items[0]?.handover_status ?? "not_handed_over", executionStatus: items[0]?.execution_status ?? "pending" })).sort((a,b) => a.awbNumber.localeCompare(b.awbNumber));
 }
 function getTableColumn(key: TableColumnKey): ColumnType<WorkbenchRow> {
