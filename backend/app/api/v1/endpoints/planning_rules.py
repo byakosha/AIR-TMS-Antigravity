@@ -107,6 +107,7 @@ def create_supply_chain_rule(
         db.query(SupplyChainRule)
         .filter(
             SupplyChainRule.airport_code == rule_in.airport_code,
+            SupplyChainRule.departure_airport_code == rule_in.departure_airport_code,
             SupplyChainRule.cargo_profile == rule_in.cargo_profile,
             SupplyChainRule.temperature_mode == rule_in.temperature_mode,
         )
@@ -120,6 +121,7 @@ def create_supply_chain_rule(
         return existing
 
     rule = SupplyChainRule(
+        departure_airport_code=rule_in.departure_airport_code,
         airport_code=rule_in.airport_code,
         carrier_code=rule_in.carrier_code,
         cargo_profile=rule_in.cargo_profile,

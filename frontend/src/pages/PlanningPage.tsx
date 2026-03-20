@@ -24,10 +24,11 @@ import {
   Typography,
   message,
   Upload,
+  Dropdown,
 } from "antd";
 import type { DefaultOptionType } from "antd/es/select";
 import type { ColumnsType, ColumnType } from "antd/es/table";
-import { CopyOutlined, DragOutlined, PlusOutlined, RobotOutlined, FileTextOutlined, UploadOutlined } from "@ant-design/icons";
+import { CopyOutlined, DragOutlined, PlusOutlined, RobotOutlined, FileTextOutlined, UploadOutlined, DownOutlined } from "@ant-design/icons";
 
 import {
 
@@ -536,27 +537,50 @@ export function PlanningPage() {
                 <Button type="primary" onClick={() => setAwbOpen(true)} disabled={!activeRow}>
                   + Новая AWB
                 </Button>
-                <Button icon={<CopyOutlined />} onClick={handleDownloadCsv} loading={apiBusy}>
-                  Скачать таблицу
-                </Button>
-                <Upload beforeUpload={handleImportCsv} showUploadList={false} accept=".csv">
-                  <Button icon={<UploadOutlined />} loading={apiBusy} style={{ borderColor: '#1890ff', color: '#1890ff' }}>
-                    Импорт реестра (CSV)
-                  </Button>
-                </Upload>
-                <Button 
-                  onClick={() => {
-                    const csvContent = "Направление;Аэропорт;Места;Вес;Объем;Температура;Груз;Тара;Клиент\nSVO-VVO;VVO;12;125.5;1.2;+2..+8;Pharma;Термобокс 50L x12;BIOCAD";
-                    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: "text/csv;charset=utf-8" });
-                    const link = document.createElement("a");
-                    link.href = URL.createObjectURL(blob);
-                    link.download = "template.csv";
-                    link.click();
+                <Dropdown
+                  menu={{
+                    items: [
+                      {
+                        key: "1",
+                        icon: <CopyOutlined />,
+                        label: <a onClick={handleDownloadCsv}>Скачать таблицу</a>,
+                      },
+                      {
+                        key: "2",
+                        icon: <UploadOutlined />,
+                        label: (
+                          <Upload beforeUpload={handleImportCsv} showUploadList={false} accept=".csv">
+                            <div>Импорт реестра (CSV)</div>
+                          </Upload>
+                        ),
+                      },
+                      {
+                        key: "3",
+                        icon: <FileTextOutlined />,
+                        label: (
+                          <a onClick={() => {
+                            const csvContent = "Направление;Аэропорт;Места;Вес;Объем;Температура;Груз;Тара;Клиент\nSVO-VVO;VVO;12;125.5;1.2;+2..+8;Pharma;Термобокс 50L x12;BIOCAD";
+                            const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: "text/csv;charset=utf-8" });
+                            const link = document.createElement("a");
+                            link.href = URL.createObjectURL(blob);
+                            link.download = "template.csv";
+                            link.click();
+                          }}>
+                            Шаблон CSV
+                          </a>
+                        ),
+                      },
+                    ]
                   }}
-                  type="link"
+                  placement="bottomRight"
                 >
-                  Шаблон CSV
-                </Button>
+                  <Button loading={apiBusy}>
+                    <Space>
+                      Работа с таблицами
+                      <DownOutlined />
+                    </Space>
+                  </Button>
+                </Dropdown>
               </Space>
             </Col>
           </Row>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, Card, Col, Row, Space, Typography, DatePicker, message, Spin, Statistic, Steps } from "antd";
+import { Button, Card, Col, Row, Space, Typography, DatePicker, message, Spin, Statistic, Steps, Table } from "antd";
 import dayjs from "dayjs";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTCooltip, AreaChart, Area, LabelList } from "recharts";
 import { fetchAnalytics, type AnalyticsData } from "../api";
@@ -130,7 +130,7 @@ export function OverviewPage() {
                         <linearGradient id="colorWeight" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#1890ff" stopOpacity={0.8}/>
                           <stop offset="95%" stopColor="#1890ff" stopOpacity={0}/>
-                        </linear.gradient>
+                        </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
                       <XAxis dataKey="name" />
@@ -165,6 +165,29 @@ export function OverviewPage() {
                     </ResponsiveContainer>
                   </div>
                 )}
+              </Card>
+            </Col>
+
+            {/* SNAPSHOTS TABLE */}
+            <Col xs={24}>
+              <Card borderless={false} className="metric-card" title="Краткая таблица заявок (Снапшот)">
+                <Table
+                  dataSource={data.snapshots}
+                  rowKey={(record, i) => `${record.direction_code}_${i}`}
+                  pagination={{ pageSize: 5 }}
+                  size="middle"
+                  scroll={{ x: 1000 }}
+                  columns={[
+                    { title: "Направление", dataIndex: "direction_name", key: "direction_name" },
+                    { title: "Аэропорт", dataIndex: "airport_code", key: "airport_code" },
+                    { title: "Места", dataIndex: "places_count", key: "places_count" },
+                    { title: "Вес (кг)", dataIndex: "weight_total", key: "weight_total" },
+                    { title: "AWB", dataIndex: "awb_number", key: "awb_number", render: (v) => v || "—" },
+                    { title: "Рейс", dataIndex: "planned_flight_number", key: "planned_flight_number", render: (v) => v || "—" },
+                    { title: "Бронь", dataIndex: "booking_status", key: "booking_status" },
+                    { title: "Вылет", dataIndex: "execution_status", key: "execution_status" },
+                  ]}
+                />
               </Card>
             </Col>
           </Row>

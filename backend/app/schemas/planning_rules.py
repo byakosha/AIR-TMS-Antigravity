@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 
 class SupplyChainRuleBase(BaseModel):
+    departure_airport_code: Optional[str] = None
     airport_code: str
     carrier_code: str
     cargo_profile: Optional[str] = None
