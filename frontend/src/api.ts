@@ -478,6 +478,29 @@ export async function fetchOverviewSummary(): Promise<OverviewSummary> {
   return response.json();
 }
 
+export interface AnalyticsData {
+  daily_weight: { name: string; weight: number; volume_weight: number; places: number }[];
+  cargo_types: { name: string; value: number }[];
+  sla_stats: { green: number; yellow: number; red: number };
+  pipeline_stats: { draft: number; pending: number; confirmed: number; executed: number };
+  top_destinations: { name: string; weight: number }[];
+  total_rows: number;
+  total_awbs: number;
+}
+
+export async function fetchAnalytics(params: { start_date?: string; end_date?: string }): Promise<AnalyticsData> {
+  const query = new URLSearchParams();
+  if (params.start_date) query.append("start_date", params.start_date);
+  if (params.end_date) query.append("end_date", params.end_date);
+  
+  const response = await fetch(`${API_BASE_URL}/analytics/dashboard?${query.toString()}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error("Failed to fetch analytics");
+  return response.json();
+}
+
+
 export async function login(username: string, password: string): Promise<LoginResponse> {
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: "POST",

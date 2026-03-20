@@ -1,10 +1,11 @@
-from app.api.v1.endpoints import (auth, directories, flights, health,
+from app.api.v1.endpoints import (analytics, auth, directories, flights, health,
                                   integration, orders, overview,
                                   planning_rules, settings, users,
                                   view_profiles, workbench)
 from fastapi import APIRouter
 
 api_router = APIRouter()
+api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 api_router.include_router(health.router, prefix="/health", tags=["health"])
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(
